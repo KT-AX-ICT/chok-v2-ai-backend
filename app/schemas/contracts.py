@@ -27,6 +27,8 @@ CHOK Phase 2 - 에이전트 I/O 계약 (초안 v0.1, 2026-07-13).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -37,17 +39,45 @@ class ModalityItem(BaseModel):
     raw: str
 
 
+class Window(BaseModel):
+    start: str
+    end: str
+
+
 class TriggerInfo(BaseModel):
-    """트리거 최소 정보만 (D-021). 서비스명/signal 없음 - 정답 유출 방지."""
+    """트리거 최소 정보만 (D-021).
+    triggered_by 값은 모달리티 종류만 허용 — 서비스명/signal 제외 (정답 유출 방지, D-020).
+    """
     trigger_time: str
-    triggered_by: list[str] = Field(default_factory=list)
+    triggered_by: list[Literal["log", "metric", "trace"]] = Field(default_factory=list)
+
+
+class ModalityInterval(BaseModel):
+    """모달리티별 파일 구간 메타데이터."""
+    fileName: str = ""
+    start: str | None = None
+    end: str | None = None
+    status: str | None = None
+    present: str | None = None
+
+
+class ModalityDetail(BaseModel):
+    intervals: list[ModalityInterval] = Field(default_factory=list)
+
+
+class ModalityInfo(BaseModel):
+    """수집된 각 모달리티의 파일·구간 정보 (에이전트 컨텍스트용)."""
+    log: ModalityDetail = Field(default_factory=ModalityDetail)
+    metric: ModalityDetail = Field(default_factory=ModalityDetail)
+    trace: ModalityDetail = Field(default_factory=ModalityDetail)
 
 
 class IngestBundle(BaseModel):
-    """서브에이전트 3종의 공통 입력."""
-    window_start: str
-    window_end: str
-    trigger: TriggerInfo
+    """수집기 → FastAPI 번들. 에이전트 3종의 공통 입력."""
+    bundle_version: str = "1.0"
+    window: Window
+    trigger_info: TriggerInfo
+    modality_info: ModalityInfo = Field(default_factory=ModalityInfo)
     logs: list[ModalityItem] = Field(default_factory=list)
     metrics: list[ModalityItem] = Field(default_factory=list)
     traces: list[ModalityItem] = Field(default_factory=list)
