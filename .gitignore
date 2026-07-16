@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 환경변수 (로컬 DB 접속 정보 포함 — 커밋 금지)
+.env
+
+# 테스트·캐시
+.pytest_cache/
+.ruff_cache/
