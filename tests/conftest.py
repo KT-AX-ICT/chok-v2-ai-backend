@@ -7,9 +7,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-import app.api.ingest as ingest_module
 from app.db.session import Base, get_db
 from app.main import app
+from app.services.job_queue import job_queue
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -41,14 +41,14 @@ async def client(db_engine):
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    # 백그라운드 태스크(_run_rca)도 테스트 DB 사용
-    original_factory = ingest_module._session_factory
-    ingest_module._session_factory = session_factory
+    # 큐 워커(_process)도 테스트 DB 사용
+    original_factory = job_queue._session_factory
+    job_queue._session_factory = session_factory
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
 
-    ingest_module._session_factory = original_factory
+    job_queue._session_factory = original_factory
     app.dependency_overrides.clear()

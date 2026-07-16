@@ -12,6 +12,9 @@ class Settings(BaseSettings):
 
     spring_base_url: str = "http://localhost:8080"
 
+    # RCA job 동시 처리 상한(워커 수). 수집기 폭주 시 병렬 처리량 제어.
+    rca_worker_concurrency: int = 2
+
     @property
     def async_db_url(self) -> str:
         return (

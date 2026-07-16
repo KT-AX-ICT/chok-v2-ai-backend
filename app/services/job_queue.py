@@ -23,11 +23,14 @@ from app.core.config import settings
 from app.db.models import IngestJob
 from app.db.session import AsyncSessionLocal
 from app.schemas.contracts import IngestBundle
+from app.services.rca_validation import validate_rca_result
 
 logger = logging.getLogger(__name__)
 
-# runner(job_id, bundle): 실제 RCA 작업. 성공 시 정상 반환, 실패 시 예외.
-RcaRunner = Callable[[int, IngestBundle], Awaitable[None]]
+# runner(job_id, bundle): 실제 RCA 작업.
+#   반환: RcaResult 또는 dict(검증 대상), 또는 None(산출물 없음 — Spring 위임만).
+#   실패 시 예외를 던지면 워커가 job을 FAILED로 전환.
+RcaRunner = Callable[[int, IngestBundle], Awaitable[object | None]]
 
 
 async def _default_runner(job_id: int, bundle: IngestBundle) -> None:
@@ -118,11 +121,18 @@ class RcaJobQueue:
             await db.commit()
 
             try:
-                await self._runner(job_id, bundle)
+                raw = await self._runner(job_id, bundle)
+                if raw is not None:
+                    # 산출물이 있으면 RcaResult 5키 계약에 맞는지 검증 후 저장.
+                    # 어긋나면 RcaResultInvalid → FAILED 전환.
+                    validated = validate_rca_result(raw)
+                    job.result = validated.model_dump(by_alias=True, exclude_none=True)
                 job.status = "DONE"
-            except Exception:
+                job.error = None
+            except Exception as exc:
                 logger.exception("job %s RCA 실패", job_id)
                 job.status = "FAILED"
+                job.error = str(exc)  # 사유 전체 저장(truncation 없음)
             finally:
                 await db.commit()
 
