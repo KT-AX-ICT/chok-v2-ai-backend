@@ -44,5 +44,25 @@ class SpringClient:
             )
             resp.raise_for_status()
 
+    async def save_failure(
+        self, job_id: int, bundle: IngestBundle, error: str
+    ) -> None:
+        """RCA 최종 실패(1회 재시도 후) 폴백 — 번들 + 실패 사유를 Spring에 전송.
+
+        검증 통과 산출물이 없으므로 result는 보내지 않고, status=FAILED와 error만 싣는다.
+        [미결 — api-spec §6] status=FAILED 리포트 수신 계약은 미확정(§5.1은 D-022로
+        status를 DONE으로 단순화). 아래 페이로드는 잠정안 — 계약 확정 시 조정.
+        """
+        payload = {
+            **bundle.model_dump(by_alias=True),
+            "status": "FAILED",
+            "error": error,
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{self._base}/api/internal/reports", json=payload
+            )
+            resp.raise_for_status()
+
 
 spring_client = SpringClient()

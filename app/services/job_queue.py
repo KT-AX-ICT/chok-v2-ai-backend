@@ -5,10 +5,15 @@
 안 된다. 이 모듈은 고정 개수(N)의 워커가 큐에서 job을 꺼내 처리하는 구조로,
 동시 실행 job 수를 최대 N개로 묶는다.
 
+큐에는 job_id만 싣는다 — 번들 원본은 DB(ingest_job.bundle)에 이미 저장돼 있으므로,
+워커가 job을 조회하면서 함께 복원한다(단일 출처, 큐 경량화).
+
 역할 분리:
   - 워커(_process): job 상태 머신 담당. PENDING → RUNNING → DONE/FAILED.
-  - runner: 실제 RCA 작업(현재는 Spring 위임 stub, 추후 orchestrator.run).
-    runner가 예외를 던지면 워커가 job을 FAILED로 전환한다.
+    RCA 실패 시 오케스트레이터부터 1회 재시작하고, 검증을 통과한 산출물만
+    Spring으로 보낸다. 최종 실패 시에는 폴백으로 실패 사유+번들을 Spring에 전송.
+  - runner: 산출물 생성만 담당(기본은 orchestrator.run). LLM 심층 구현으로
+    교체할 때 이 시그니처만 맞추면 된다.
 """
 
 from __future__ import annotations
@@ -22,34 +27,26 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.db.models import IngestJob
 from app.db.session import AsyncSessionLocal
-from app.schemas.contracts import IngestBundle
+from app.schemas.contracts import IngestBundle, RcaResult
 from app.services.rca_validation import validate_rca_result
 
 logger = logging.getLogger(__name__)
 
-# runner(job_id, bundle): 실제 RCA 작업.
-#   반환: RcaResult 또는 dict(검증 대상), 또는 None(산출물 없음 — Spring 위임만).
-#   실패 시 예외를 던지면 워커가 job을 FAILED로 전환.
+# runner(job_id, bundle): RCA 산출물 생성.
+#   반환: RcaResult 또는 dict(검증 대상), 또는 None(산출물 없음).
+#   실패 시 예외를 던지면 워커가 재시도 후 job을 FAILED로 전환.
 RcaRunner = Callable[[int, IngestBundle], Awaitable[object | None]]
 
 
 async def _default_runner(job_id: int, bundle: IngestBundle) -> object:
-    """기본 runner — 오케스트레이터로 RCA 산출 후 Spring 저장.
+    """기본 runner — 오케스트레이터로 RCA 산출물을 만들어 반환한다.
 
-    RcaResult를 반환하면 워커가 검증·저장하고 DONE 전환한다.
-    Spring 저장은 best-effort: 데모/개발 중 Spring 미가동이어도 job은 실패시키지 않는다.
-    실 연동 강화(재시도·엄격 실패 처리)는 #9.
+    Spring 전송·검증·재시도는 워커(_process)가 담당한다. runner는 '산출물 생성'만
+    책임지므로, LLM 심층 분석 구현으로 교체할 때 이 시그니처만 맞추면 된다.
     """
     from app.agents.orchestrator import orchestrator
-    from app.services.spring_client import spring_client
 
-    result = await orchestrator.run(job_id, bundle)
-    try:
-        # 신규 구조: 번들 + 리포트를 한 번에 POST
-        await spring_client.save_result(job_id, bundle, result)
-    except Exception:
-        logger.warning("Spring 저장 실패(무시, 데모): job %s", job_id)
-    return result
+    return await orchestrator.run(job_id, bundle)
 
 
 class RcaJobQueue:
@@ -61,16 +58,18 @@ class RcaJobQueue:
         session_factory: Callable = AsyncSessionLocal,
         runner: RcaRunner = _default_runner,
     ) -> None:
-        self._queue: asyncio.Queue[tuple[int, IngestBundle]] = asyncio.Queue()
+        self._queue: asyncio.Queue[int] = asyncio.Queue()
         self._concurrency = concurrency or settings.rca_worker_concurrency
         self._session_factory = session_factory
         self._runner = runner
         self._workers: list[asyncio.Task] = []
         self._started = False
 
-    async def enqueue(self, job_id: int, bundle: IngestBundle) -> None:
-        """job을 큐에 넣는다. 워커 미기동 상태여도 안전(큐에 적재만)."""
-        await self._queue.put((job_id, bundle))
+    async def enqueue(self, job_id: int) -> None:
+        """job_id만 큐에 넣는다. 번들은 워커가 DB(job.bundle)에서 복원한다.
+
+        워커 미기동 상태여도 안전(큐에 적재만)."""
+        await self._queue.put(job_id)
 
     def start(self) -> None:
         """워커 풀을 기동한다. 실행 중인 이벤트 루프 안에서 호출해야 한다."""
@@ -106,16 +105,40 @@ class RcaJobQueue:
 
     async def _worker(self, idx: int) -> None:
         while True:
-            job_id, bundle = await self._queue.get()
+            job_id = await self._queue.get()
             try:
-                await self._process(job_id, bundle)
+                await self._process(job_id)
             except Exception:  # 워커 자체는 절대 죽지 않는다
                 logger.exception("워커 %d: job %s 처리 중 예외", idx, job_id)
             finally:
                 self._queue.task_done()
 
-    async def _process(self, job_id: int, bundle: IngestBundle) -> None:
-        """job 상태 머신: RUNNING 전환 → runner 실행 → DONE/FAILED."""
+    async def _run_rca(self, job_id: int, bundle: IngestBundle) -> RcaResult | None:
+        """RCA 실행 + 5키 검증. 실패 시 오케스트레이터부터 1회 재시작.
+
+        runner가 None을 반환하면(산출물 없음) 검증 없이 None을 통과시킨다.
+        최초+재시도 2회 모두 실패하면 마지막 예외를 던져 상위에서 FAILED 처리한다.
+        """
+        last_exc: Exception | None = None
+        for attempt in (1, 2):
+            try:
+                raw = await self._runner(job_id, bundle)
+                if raw is None:
+                    return None
+                return validate_rca_result(raw)
+            except Exception as exc:
+                last_exc = exc
+                logger.warning("job %s RCA 시도 %d/2 실패: %s", job_id, attempt, exc)
+        assert last_exc is not None
+        raise last_exc
+
+    async def _process(self, job_id: int) -> None:
+        """job 상태 머신: RUNNING → RCA(1회 재시도) → DONE/FAILED.
+
+        번들은 큐가 아니라 DB(job.bundle)에서 복원한다(단일 출처). DB 커밋으로
+        상태를 확정한 뒤, 세션 밖에서 Spring 전송을 시도한다(best-effort).
+        """
+        delivery: tuple[str, object] | None = None
         async with self._session_factory() as db:
             result = await db.execute(
                 select(IngestJob).where(IngestJob.job_id == job_id)
@@ -125,24 +148,56 @@ class RcaJobQueue:
                 logger.warning("job %s 없음 — 스킵", job_id)
                 return
 
+            bundle = IngestBundle.model_validate(job.bundle)
             job.status = "RUNNING"
             await db.commit()
 
             try:
-                raw = await self._runner(job_id, bundle)
-                if raw is not None:
-                    # 산출물이 있으면 RcaResult 5키 계약에 맞는지 검증 후 저장.
-                    # 어긋나면 RcaResultInvalid → FAILED 전환.
-                    validated = validate_rca_result(raw)
+                validated = await self._run_rca(job_id, bundle)
+                if validated is not None:
                     job.result = validated.model_dump(by_alias=True, exclude_none=True)
                 job.status = "DONE"
                 job.error = None
+                await db.commit()
+                if validated is not None:
+                    delivery = ("result", validated)
             except Exception as exc:
-                logger.exception("job %s RCA 실패", job_id)
+                logger.exception("job %s RCA 최종 실패(재시도 후)", job_id)
                 job.status = "FAILED"
                 job.error = str(exc)  # 사유 전체 저장(truncation 없음)
-            finally:
                 await db.commit()
+                delivery = ("failure", str(exc))
+
+        # DB(SSOT) 확정 후, 세션 밖에서 Spring 전송(best-effort)
+        if delivery is None:
+            return
+        kind, payload = delivery
+        if kind == "result":
+            await self._deliver_result(job_id, bundle, payload)
+        else:
+            await self._deliver_failure(job_id, bundle, payload)
+
+    async def _deliver_result(
+        self, job_id: int, bundle: IngestBundle, result: object
+    ) -> None:
+        """검증 통과분을 Spring에 전송(best-effort). 실패해도 job DONE 유지."""
+        from app.services.spring_client import spring_client
+
+        try:
+            await spring_client.save_result(job_id, bundle, result)
+        except Exception:
+            logger.warning("Spring 결과 전송 실패(무시): job %s", job_id)
+
+    async def _deliver_failure(
+        self, job_id: int, bundle: IngestBundle, error: str
+    ) -> None:
+        """실패 폴백 — 실패 사유+번들을 Spring에 전송(best-effort)."""
+        from app.services.spring_client import spring_client
+
+        try:
+            await spring_client.save_failure(job_id, bundle, error)
+        except Exception:
+            logger.warning("Spring 실패 폴백 전송 실패(무시): job %s", job_id)
 
 
 # 앱 전역 큐 인스턴스. lifespan에서 start()/stop() 호출.

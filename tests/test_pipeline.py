@@ -121,7 +121,7 @@ async def test_full_pipeline_through_queue_reaches_done(factory):
     bundle = _bundle()
     job_id = await _seed_job(factory, bundle)
     q.start()
-    await q.enqueue(job_id, bundle)
+    await q.enqueue(job_id)
     await q.stop()
 
     async with factory() as db:
