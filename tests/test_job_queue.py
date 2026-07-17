@@ -87,7 +87,7 @@ async def test_worker_processes_job_to_done(factory):
     q = RcaJobQueue(concurrency=2, session_factory=factory, runner=runner)
     q.start()
     job_id = await _seed_job(factory)
-    await q.enqueue(job_id, _make_bundle())
+    await q.enqueue(job_id)
     await q.stop()
 
     assert ran == [job_id]
@@ -101,7 +101,7 @@ async def test_worker_marks_failed_on_runner_error(factory):
     q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
     q.start()
     job_id = await _seed_job(factory)
-    await q.enqueue(job_id, _make_bundle())
+    await q.enqueue(job_id)
     await q.stop()
 
     assert await _status(factory, job_id) == "FAILED"
@@ -114,7 +114,7 @@ async def test_valid_result_is_persisted_on_done(factory):
     q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
     q.start()
     job_id = await _seed_job(factory)
-    await q.enqueue(job_id, _make_bundle())
+    await q.enqueue(job_id)
     await q.stop()
 
     async with factory() as db:
@@ -135,7 +135,7 @@ async def test_invalid_result_marks_failed_with_reason(factory):
     q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
     q.start()
     job_id = await _seed_job(factory)
-    await q.enqueue(job_id, _make_bundle())
+    await q.enqueue(job_id)
     await q.stop()
 
     async with factory() as db:
@@ -152,7 +152,7 @@ async def test_missing_job_is_skipped_without_crash(factory):
 
     q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
     q.start()
-    await q.enqueue(99999, _make_bundle())
+    await q.enqueue(99999)
     await q.stop()  # 예외 없이 정상 종료되면 성공
 
 
@@ -174,7 +174,7 @@ async def test_concurrency_cap_limits_parallelism(factory):
     q.start()
     for _ in range(6):
         job_id = await _seed_job(factory)
-        await q.enqueue(job_id, _make_bundle())
+        await q.enqueue(job_id)
     await q.stop()
 
     assert peak <= 2

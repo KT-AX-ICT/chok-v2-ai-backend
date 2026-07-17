@@ -33,7 +33,8 @@ async def ingest_bundle(
     await db.commit()
     await db.refresh(job)
 
-    await job_queue.enqueue(job.job_id, bundle)
+    # 번들은 DB에 저장했으므로 큐에는 job_id만 넘긴다(워커가 DB에서 복원).
+    await job_queue.enqueue(job.job_id)
 
     return IngestResponse(job_id=job.job_id)
 
