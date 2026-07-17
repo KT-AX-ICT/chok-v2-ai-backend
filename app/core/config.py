@@ -2,7 +2,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # extra="ignore": .env를 docker-compose와 공유하므로 앱이 안 쓰는 키(MYSQL_ROOT_PASSWORD 등) 허용
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     mysql_host: str = "localhost"
     mysql_port: int = 3306
