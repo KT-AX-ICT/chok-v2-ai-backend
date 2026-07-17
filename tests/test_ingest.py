@@ -75,6 +75,16 @@ async def test_ingest_invalid_triggered_by_returns_422(client: AsyncClient):
     assert resp.status_code == 422
 
 
+async def test_ingest_invalid_timestamp_returns_422(client: AsyncClient):
+    """window.start가 ISO-8601 형식이 아니면 422 (Spring 전송 전 FastAPI가 거름)."""
+    bad = {
+        **BUNDLE_PAYLOAD,
+        "window": {"start": "not-a-timestamp", "end": "2026-01-15T10:03:00Z"},
+    }
+    resp = await client.post("/ingest", json=bad)
+    assert resp.status_code == 422
+
+
 async def test_ingest_empty_modalities_accepted(client: AsyncClient):
     minimal = {
         "bundle_version": "1.0",

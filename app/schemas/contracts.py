@@ -27,52 +27,84 @@ CHOK Phase 2 - 에이전트 I/O 계약 (초안 v0.1, 2026-07-13).
 
 from __future__ import annotations
 
-from typing import Literal
+from datetime import datetime
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 
-class ModalityItem(BaseModel):
+def _valid_iso8601(v: str) -> str:
+    """타임스탬프가 ISO-8601로 파싱되는지 형식만 검증. 값은 문자열 그대로 보존(D-021)."""
+    try:
+        datetime.fromisoformat(v)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"타임스탬프 형식 오류(ISO-8601 아님): {v!r}") from exc
+    return v
+
+
+# 타임스탬프 문자열 타입 — 형식 검증만 하고 str 그대로 유지.
+Iso8601 = Annotated[str, AfterValidator(_valid_iso8601)]
+
+
+def to_camel(snake: str) -> str:
+    """snake_case → camelCase (직렬화 별칭 생성용). 밑줄 없으면 그대로."""
+    parts = [p for p in snake.split("_") if p]
+    if not parts:
+        return snake
+    return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
+
+
+class CamelModel(BaseModel):
+    """계약 모델 베이스 — 필드는 snake_case, 직렬화 별칭은 camelCase.
+
+    Spring과의 계약은 camelCase. populate_by_name=True 로 입력은 snake/camel 둘 다
+    허용하고, Spring으로 보낼 때 model_dump(by_alias=True) 로 camelCase를 출력한다.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+
+class ModalityItem(CamelModel):
     """log/metric/trace 공통 아이템. raw는 string (D-021)."""
-    timestamp: str
+    timestamp: Iso8601
     service: str = ""
     raw: str
 
 
-class Window(BaseModel):
-    start: str
-    end: str
+class Window(CamelModel):
+    start: Iso8601
+    end: Iso8601
 
 
-class TriggerInfo(BaseModel):
+class TriggerInfo(CamelModel):
     """트리거 최소 정보만 (D-021).
     triggered_by 값은 모달리티 종류만 허용 — 서비스명/signal 제외 (정답 유출 방지, D-020).
     """
-    trigger_time: str
+    trigger_time: Iso8601
     triggered_by: list[Literal["log", "metric", "trace"]] = Field(default_factory=list)
 
 
-class ModalityInterval(BaseModel):
+class ModalityInterval(CamelModel):
     """모달리티별 파일 구간 메타데이터."""
     fileName: str = ""
-    start: str | None = None
-    end: str | None = None
+    start: Iso8601 | None = None
+    end: Iso8601 | None = None
     status: str | None = None
     present: str | None = None
 
 
-class ModalityDetail(BaseModel):
+class ModalityDetail(CamelModel):
     intervals: list[ModalityInterval] = Field(default_factory=list)
 
 
-class ModalityInfo(BaseModel):
+class ModalityInfo(CamelModel):
     """수집된 각 모달리티의 파일·구간 정보 (에이전트 컨텍스트용)."""
     log: ModalityDetail = Field(default_factory=ModalityDetail)
     metric: ModalityDetail = Field(default_factory=ModalityDetail)
     trace: ModalityDetail = Field(default_factory=ModalityDetail)
 
 
-class IngestBundle(BaseModel):
+class IngestBundle(CamelModel):
     """수집기 → FastAPI 번들. 에이전트 3종의 공통 입력."""
     bundle_version: str = "1.0"
     window: Window
@@ -83,35 +115,34 @@ class IngestBundle(BaseModel):
     traces: list[ModalityItem] = Field(default_factory=list)
 
 
-class LogLine(BaseModel):
+class LogLine(CamelModel):
     timestamp: str | None = None
     level: str | None = None
     msg: str | None = None
 
 
-class TraceSpan(BaseModel):
+class TraceSpan(CamelModel):
     traceId: str | None = None
-    from_: str | None = Field(default=None, alias="from")
+    from_: str | None = None  # 별칭 'from' (예약어 회피, to_camel이 생성)
     to: str | None = None
     duration: int | None = None
     status: str | None = None
-    model_config = {"populate_by_name": True}
 
 
-class MetricItem(BaseModel):
+class MetricItem(CamelModel):
     label: str | None = None
     value: str | None = None
     threshold: str | None = None
     exceeded: bool | None = None
 
 
-class LogEvidence(BaseModel):
+class LogEvidence(CamelModel):
     conclusion: str
     source: str | None = None
     lines: list[LogLine] | None = None
 
 
-class TraceEvidence(BaseModel):
+class TraceEvidence(CamelModel):
     """[예지 확인 필요] - 이예지 담당 영역."""
     conclusion: str
     source: str | None = None
@@ -119,53 +150,53 @@ class TraceEvidence(BaseModel):
     origin_service: str | None = None
 
 
-class MetricEvidence(BaseModel):
+class MetricEvidence(CamelModel):
     conclusion: str
     source: str | None = None
     items: list[MetricItem] | None = None
 
 
-class Rca(BaseModel):
+class Rca(CamelModel):
     rootCause: str
     propagation: str
     confidence: int | None = None
 
 
-class Summary(BaseModel):
+class Summary(CamelModel):
     highlight: str
     chips: list[str] | None = None
     errorTags: list[str] | None = None
     neutralTags: list[str] | None = None
 
 
-class Evidence(BaseModel):
+class Evidence(CamelModel):
     log: LogEvidence
     trace: TraceEvidence
     metric: MetricEvidence
 
 
-class Affected(BaseModel):
+class Affected(CamelModel):
     service: str
     errors: int | None = None
     type: str | None = None
 
 
-class ImpactMetric(BaseModel):
+class ImpactMetric(CamelModel):
     label: str | None = None
     value: str | None = None
 
 
-class Impact(BaseModel):
+class Impact(CamelModel):
     affected: list[Affected]
     metrics: list[ImpactMetric] | None = None
 
 
-class Actions(BaseModel):
+class Actions(CamelModel):
     steps: list[str]
     recovery: str | None = None
 
 
-class ReportDetail(BaseModel):
+class ReportDetail(CamelModel):
     """result JSON 그대로. 5키 존재 고정, 내부 optional 생략."""
     rca: Rca
     summary: Summary
@@ -174,7 +205,7 @@ class ReportDetail(BaseModel):
     actions: Actions
 
 
-class RcaResult(BaseModel):
+class RcaResult(CamelModel):
     """종합 에이전트 최종 산출 = PATCH DONE 바디 재료."""
     type: str
     severity: str

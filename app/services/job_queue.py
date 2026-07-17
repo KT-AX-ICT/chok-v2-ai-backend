@@ -33,15 +33,23 @@ logger = logging.getLogger(__name__)
 RcaRunner = Callable[[int, IngestBundle], Awaitable[object | None]]
 
 
-async def _default_runner(job_id: int, bundle: IngestBundle) -> None:
-    """기본 runner — Spring에 번들 저장 위임.
+async def _default_runner(job_id: int, bundle: IngestBundle) -> object:
+    """기본 runner — 오케스트레이터로 RCA 산출 후 Spring 저장.
 
-    추후 orchestrator.run(job_id, bundle) 로 교체 (I7).
+    RcaResult를 반환하면 워커가 검증·저장하고 DONE 전환한다.
+    Spring 저장은 best-effort: 데모/개발 중 Spring 미가동이어도 job은 실패시키지 않는다.
+    실 연동 강화(재시도·엄격 실패 처리)는 #9.
     """
+    from app.agents.orchestrator import orchestrator
     from app.services.spring_client import spring_client
 
-    await spring_client.save_bundle(job_id, bundle)
-    # TODO(I7): orchestrator.run(job_id, bundle) 연결
+    result = await orchestrator.run(job_id, bundle)
+    try:
+        # 신규 구조: 번들 + 리포트를 한 번에 POST
+        await spring_client.save_result(job_id, bundle, result)
+    except Exception:
+        logger.warning("Spring 저장 실패(무시, 데모): job %s", job_id)
+    return result
 
 
 class RcaJobQueue:
