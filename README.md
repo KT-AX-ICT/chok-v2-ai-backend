@@ -8,7 +8,7 @@ chok v2 — FastAPI 멀티에이전트 RCA (데이터 계층 본체)
 ```bash
 # 1. 의존성 설치 (uv 기반)
 uv sync --extra dev
-ㅣㅣ
+
 # 2. 환경변수 설정
 cp .env.example .env   # 값 수정
 
