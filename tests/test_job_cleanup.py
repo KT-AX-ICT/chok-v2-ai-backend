@@ -82,11 +82,18 @@ async def test_running_loop_purges_then_stops_cleanly(factory):
     now = _utc_naive_now()
     old_done = await _seed(factory, "DONE", now - timedelta(hours=48))
 
+    # interval을 길게 잡아 stop() 시점에 루프가 sleep 중이도록 보장한다.
+    # (짧은 interval이면 cancel이 DB 쿼리 도중에 떨어져 aiosqlite 커넥션이 폐기되고,
+    #  StaticPool이 새 커넥션 = 새 :memory: DB를 만들어 "no such table"로 깨진다)
     cleaner = JobCleaner(
-        retention_hours=24, interval_seconds=0.01, session_factory=factory
+        retention_hours=24, interval_seconds=60, session_factory=factory
     )
     cleaner.start()
-    await asyncio.sleep(0.05)  # 루프가 최소 1회 purge 하도록
+    # 기동 직후 첫 purge가 끝났는지 폴링으로 확인
+    for _ in range(200):
+        if old_done not in await _remaining_ids(factory):
+            break
+        await asyncio.sleep(0.01)
     await cleaner.stop()  # CancelledError 없이 깔끔히 종료되면 성공
 
     assert old_done not in await _remaining_ids(factory)
