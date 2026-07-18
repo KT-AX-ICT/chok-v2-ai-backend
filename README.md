@@ -1,7 +1,7 @@
 # chok-v2-ai-backend
 chok v2 — FastAPI 멀티에이전트 RCA (데이터 계층 본체)
 
-📄 [처리 흐름 문서](docs/flow.md) · [LLM 에이전트 설계](docs/agent-design.md) · [번들 raw 압축 전략](docs/bundle-compression.md)
+📄 [처리 흐름 문서](docs/flow.md) · [LLM 에이전트 설계](docs/agent-design.md) · [번들 raw 압축 전략](docs/bundle-compression.md) · [구현 계획](docs/implementation-plan.md)
 
 ## 시작하기
 
