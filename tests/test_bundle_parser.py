@@ -58,7 +58,9 @@ def test_log_agent_excludes_filename():
 def test_metric_agent_input_has_metrics():
     result = parse_for_metric_agent(_BUNDLE)
     assert "metrics" in result
-    assert "error_rate=0.9" in result["metrics"]
+    # 압축(시리즈 통계) 표현 — 라벨과 값이 통계로 유지된다
+    assert "error_rate" in result["metrics"]
+    assert "0.9" in result["metrics"]
 
 
 def test_trace_agent_input_has_traces():
