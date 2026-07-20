@@ -1,8 +1,8 @@
-"""LangGraph 오케스트레이션 — planner → 모달리티 병렬(deep/scan) → report → assemble.
+"""LangGraph 오케스트레이션 — router → 모달리티 병렬(deep/scan) → report → assemble.
 
 그래프 구조 (docs/agent-design.md):
 
-    START → planner → (log · metric · trace 병렬) → report(+assemble) → END
+    START → router → (log · metric · trace 병렬) → report(+assemble) → END
 
 실패 처리:
   - 모달리티 노드 실패 → "분석 실패" Evidence로 대체하고 완주 (부분 실패)
@@ -22,7 +22,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from app.agents.modality_agents import ModalityAgent, make_modality_agent
-from app.agents.planner import Planner, llm_planner, plan_with_guardrails
+from app.agents.router import Router, llm_router, route_with_guardrails
 from app.agents.report_llm import ReportAgent, assemble, llm_report
 from app.agents.schemas import MODALITIES, Depth, Modality
 from app.schemas.contracts import (
@@ -55,7 +55,7 @@ class RcaState(TypedDict, total=False):
 
     job_id: int
     bundle: IngestBundle
-    plan: dict[Modality, Depth]
+    routes: dict[Modality, Depth]
     log_ev: LogEvidence
     metric_ev: MetricEvidence
     trace_ev: TraceEvidence
@@ -67,11 +67,11 @@ class LlmOrchestrator:
 
     def __init__(
         self,
-        planner: Planner = llm_planner,
+        router: Router = llm_router,
         agents: dict[tuple[Modality, Depth], ModalityAgent] | None = None,
         report_agent: ReportAgent = llm_report,
     ) -> None:
-        self._planner = planner
+        self._router = router
         self._agents = agents or {
             (m, d): make_modality_agent(m, d) for m in MODALITIES for d in ("deep", "scan")
         }
@@ -80,9 +80,9 @@ class LlmOrchestrator:
 
     # ------------------------------------------------------------- 노드
 
-    async def _planner_node(self, state: RcaState) -> dict:
-        plan = await plan_with_guardrails(state["bundle"], self._planner)
-        return {"plan": plan}
+    async def _router_node(self, state: RcaState) -> dict:
+        routes = await route_with_guardrails(state["bundle"], self._router)
+        return {"routes": routes}
 
     def _make_modality_node(self, modality: Modality):
         items_of = {
@@ -97,7 +97,7 @@ class LlmOrchestrator:
             if not items_of(bundle):
                 # 데이터 0건 — LLM 생략 (가드레일)
                 return {key: _code_evidence(modality, f"{modality} 데이터 없음 — 분석 생략")}
-            mode = state["plan"][modality]
+            mode = state["routes"][modality]
             try:
                 evidence = await self._agents[(modality, mode)](bundle)
                 return {key: evidence}
@@ -120,14 +120,14 @@ class LlmOrchestrator:
 
     def _build_graph(self):
         g = StateGraph(RcaState)
-        g.add_node("planner", self._planner_node)
+        g.add_node("router", self._router_node)
         for m in MODALITIES:
             g.add_node(m, self._make_modality_node(m))
         g.add_node("report", self._report_node)
 
-        g.add_edge(START, "planner")
+        g.add_edge(START, "router")
         for m in MODALITIES:
-            g.add_edge("planner", m)
+            g.add_edge("router", m)
         g.add_edge(list(MODALITIES), "report")  # join: 3종 Evidence 수집 후 진행
         g.add_edge("report", END)
         return g.compile()

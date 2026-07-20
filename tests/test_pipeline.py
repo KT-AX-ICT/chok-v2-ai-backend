@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 import app.agents.orchestrator as orchestrator_mod
 from app.agents.graph import LlmOrchestrator
-from app.agents.schemas import MODALITIES, PlanDecision, ReportDraft
+from app.agents.schemas import MODALITIES, ReportDraft, RouteDecision
 from app.db.models import IngestJob
 from app.db.session import Base
 from app.schemas.contracts import (
@@ -53,8 +53,8 @@ def _fake_orchestrator(
 ) -> LlmOrchestrator:
     """LLM 노드 전부를 fake로 채운 오케스트레이터 — 그래프 배선은 실제 그대로."""
 
-    async def planner(bundle):
-        return PlanDecision(log="deep", metric="deep", trace="deep", reason="테스트")
+    async def router(bundle):
+        return RouteDecision(log="deep", metric="deep", trace="deep", reason="테스트")
 
     evidences = {
         "log": LogEvidence(conclusion="로그 결론"),
@@ -81,7 +81,7 @@ def _fake_orchestrator(
             actions=Actions(steps=["s"]),
         )
 
-    return LlmOrchestrator(planner=planner, agents=agents, report_agent=report)
+    return LlmOrchestrator(router=router, agents=agents, report_agent=report)
 
 
 @pytest.fixture()

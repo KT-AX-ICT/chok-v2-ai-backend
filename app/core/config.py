@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model_report: str = "gpt-5.5-2026-04-23"
     openai_model_analysis: str = "gpt-5.4-mini-2026-03-17"
-    openai_model_light: str = "gpt-5.4-nano-2026-03-17"  # planner + scan 공용
+    openai_model_light: str = "gpt-5.4-nano-2026-03-17"  # router + scan 공용
     # 전역 LLM 동시 호출 상한(세마포어). TPM 병목 완화의 2차 밸브(1차는 워커 수).
     openai_max_concurrency: int = 4
     # 429 등 재시도 횟수 — langchain-openai 내장 지수 백오프 사용.

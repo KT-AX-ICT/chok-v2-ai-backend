@@ -17,7 +17,7 @@ from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
 
-# reasoning effort 차등: planner·scan low / 심층 medium / report high
+# reasoning effort 차등: router·scan low / 심층 medium / report high
 Effort = Literal["low", "medium", "high"]
 
 # 절단 발생 시 프롬프트에 삽입되는 고지 문구. 에이전트가 부분 관측임을 인지하게 한다.

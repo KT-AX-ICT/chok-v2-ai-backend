@@ -1,10 +1,10 @@
-"""planner 가드레일·모달리티 에이전트 배선 테스트 — LLM 실호출 없음(fake 주입)."""
+"""router 가드레일·모달리티 에이전트 배선 테스트 — LLM 실호출 없음(fake 주입)."""
 
 import pytest
 
 from app.agents.modality_agents import build_user_message, make_modality_agent
-from app.agents.planner import build_planner_message, plan_with_guardrails
-from app.agents.schemas import PlanDecision
+from app.agents.router import build_router_message, route_with_guardrails
+from app.agents.schemas import RouteDecision
 from app.core.config import settings
 from app.schemas.contracts import IngestBundle
 
@@ -24,42 +24,42 @@ def _bundle(triggered_by=("log",), logs=True) -> IngestBundle:
     return IngestBundle(**base)
 
 
-# ------------------------------------------------------- planner 가드레일
+# ------------------------------------------------------- router 가드레일
 
 
 async def test_triggered_modality_promoted_to_deep():
     """가드레일(1): LLM이 scan으로 내려도 triggered_by 모달리티는 deep 승격."""
 
-    async def fake_planner(bundle):
-        return PlanDecision(log="scan", metric="scan", trace="scan", reason="전부 정상으로 오판")
+    async def fake_router(bundle):
+        return RouteDecision(log="scan", metric="scan", trace="scan", reason="전부 정상으로 오판")
 
-    plan = await plan_with_guardrails(_bundle(triggered_by=("log", "metric")), fake_planner)
-    assert plan == {"log": "deep", "metric": "deep", "trace": "scan"}
+    routes = await route_with_guardrails(_bundle(triggered_by=("log", "metric")), fake_router)
+    assert routes == {"log": "deep", "metric": "deep", "trace": "scan"}
 
 
 async def test_non_triggered_scan_decision_respected():
     """역방향 강등 없음: 비트리거 모달리티는 LLM 결정(deep)을 그대로 존중."""
 
-    async def fake_planner(bundle):
-        return PlanDecision(log="deep", metric="scan", trace="deep", reason="trace 의심")
+    async def fake_router(bundle):
+        return RouteDecision(log="deep", metric="scan", trace="deep", reason="trace 의심")
 
-    plan = await plan_with_guardrails(_bundle(triggered_by=("log",)), fake_planner)
-    assert plan == {"log": "deep", "metric": "scan", "trace": "deep"}
+    routes = await route_with_guardrails(_bundle(triggered_by=("log",)), fake_router)
+    assert routes == {"log": "deep", "metric": "scan", "trace": "deep"}
 
 
-async def test_planner_failure_falls_back_to_all_deep():
-    """가드레일(2): planner 예외 시 전 모달리티 deep."""
+async def test_router_failure_falls_back_to_all_deep():
+    """가드레일(2): router 예외 시 전 모달리티 deep."""
 
-    async def broken_planner(bundle):
+    async def broken_router(bundle):
         raise RuntimeError("429 소진")
 
-    plan = await plan_with_guardrails(_bundle(triggered_by=()), broken_planner)
-    assert plan == {"log": "deep", "metric": "deep", "trace": "deep"}
+    routes = await route_with_guardrails(_bundle(triggered_by=()), broken_router)
+    assert routes == {"log": "deep", "metric": "deep", "trace": "deep"}
 
 
-def test_planner_message_is_metadata_only():
-    """planner 입력에 raw 데이터가 섞이지 않음 — 건수·구간·트리거만."""
-    msg = build_planner_message(_bundle())
+def test_router_message_is_metadata_only():
+    """router 입력에 raw 데이터가 섞이지 않음 — 건수·구간·트리거만."""
+    msg = build_router_message(_bundle())
     assert "log=1" in msg  # 건수
     assert "ERROR timeout" not in msg  # raw 미포함
     assert "2026-01-15T10:01:30Z" in msg  # 트리거 시각

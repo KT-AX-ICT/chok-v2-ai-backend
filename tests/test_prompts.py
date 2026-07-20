@@ -18,4 +18,4 @@ def test_unknown_name_rejected():
 
 
 def test_cached_returns_same_object():
-    assert load_prompt("planner") is load_prompt("planner")
+    assert load_prompt("router") is load_prompt("router")

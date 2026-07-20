@@ -18,8 +18,8 @@ Depth = Literal["deep", "scan"]
 MODALITIES: tuple[Modality, ...] = ("log", "metric", "trace")
 
 
-class PlanDecision(BaseModel):
-    """planner 출력 — 모달리티별 deep/scan 결정 + 한 줄 사유."""
+class RouteDecision(BaseModel):
+    """router 출력 — 모달리티별 deep/scan 결정 + 한 줄 사유."""
 
     log: Depth
     metric: Depth

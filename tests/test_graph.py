@@ -3,7 +3,7 @@
 import pytest
 
 from app.agents.graph import LlmOrchestrator
-from app.agents.schemas import MODALITIES, PlanDecision, ReportDraft
+from app.agents.schemas import MODALITIES, ReportDraft, RouteDecision
 from app.schemas.contracts import (
     Actions,
     Affected,
@@ -35,8 +35,8 @@ def _bundle(triggered_by=("log",), with_traces=True) -> IngestBundle:
     return IngestBundle(**base)
 
 
-async def _fake_planner(bundle):
-    return PlanDecision(log="deep", metric="scan", trace="deep", reason="테스트")
+async def _fake_router(bundle):
+    return RouteDecision(log="deep", metric="scan", trace="deep", reason="테스트")
 
 
 def _draft(service="media-service") -> ReportDraft:
@@ -76,7 +76,7 @@ async def _fake_report(bundle, log_ev, metric_ev, trace_ev):
 async def test_happy_path_routes_by_plan_and_assembles():
     calls: list = []
     orch = LlmOrchestrator(
-        planner=_fake_planner, agents=_make_fake_agents(calls), report_agent=_fake_report
+        router=_fake_router, agents=_make_fake_agents(calls), report_agent=_fake_report
     )
     result = await orch.run(1, _bundle())
 
@@ -93,7 +93,7 @@ async def test_happy_path_routes_by_plan_and_assembles():
 async def test_empty_modality_skips_llm():
     calls: list = []
     orch = LlmOrchestrator(
-        planner=_fake_planner, agents=_make_fake_agents(calls), report_agent=_fake_report
+        router=_fake_router, agents=_make_fake_agents(calls), report_agent=_fake_report
     )
     result = await orch.run(2, _bundle(with_traces=False))
 
@@ -110,7 +110,7 @@ async def test_partial_failure_becomes_failed_evidence():
         raise RuntimeError("LLM 재시도 소진")
 
     agents[("log", "deep")] = broken_log_agent
-    orch = LlmOrchestrator(planner=_fake_planner, agents=agents, report_agent=_fake_report)
+    orch = LlmOrchestrator(router=_fake_router, agents=agents, report_agent=_fake_report)
     result = await orch.run(3, _bundle())
 
     assert "분석 실패" in result.detail.evidence.log.conclusion  # 부분 실패 완주
@@ -124,21 +124,21 @@ async def test_report_failure_propagates():
         raise RuntimeError("report 실패")
 
     orch = LlmOrchestrator(
-        planner=_fake_planner, agents=_make_fake_agents([]), report_agent=broken_report
+        router=_fake_router, agents=_make_fake_agents([]), report_agent=broken_report
     )
     with pytest.raises(RuntimeError, match="report 실패"):
         await orch.run(4, _bundle())
 
 
-async def test_planner_failure_still_completes_all_deep():
-    """planner 실패 → 전 모달리티 deep 폴백으로 완주."""
+async def test_router_failure_still_completes_all_deep():
+    """router 실패 → 전 모달리티 deep 폴백으로 완주."""
     calls: list = []
 
-    async def broken_planner(bundle):
-        raise RuntimeError("planner 실패")
+    async def broken_router(bundle):
+        raise RuntimeError("router 실패")
 
     orch = LlmOrchestrator(
-        planner=broken_planner, agents=_make_fake_agents(calls), report_agent=_fake_report
+        router=broken_router, agents=_make_fake_agents(calls), report_agent=_fake_report
     )
     result = await orch.run(5, _bundle())
     assert sorted(calls) == [("log", "deep"), ("metric", "deep"), ("trace", "deep")]

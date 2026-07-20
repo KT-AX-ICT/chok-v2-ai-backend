@@ -9,12 +9,12 @@
 app/
 ├── agents/
 │   ├── llm.py               # [신규] 모델 팩토리 + 전역 세마포어 + 입력 절단
-│   ├── schemas.py           # [신규] 에이전트 내부 스키마 (PlanDecision, ReportDraft)
+│   ├── schemas.py           # [신규] 에이전트 내부 스키마 (RouteDecision, ReportDraft)
 │   ├── prompts/             # [신규] 시스템 프롬프트 (md 파일 + 로더)
 │   │   ├── __init__.py      #   load_prompt(name)
-│   │   ├── _common.md · planner.md · scan.md · log.md · metric.md · trace.md · report.md
+│   │   ├── _common.md · router.md · scan.md · log.md · metric.md · trace.md · report.md
 │   ├── modality_agents.py   # [신규] 심층 3종 + 경량 스캔 (LLM)
-│   ├── planner.py           # [신규] planner + 가드레일
+│   ├── router.py           # [신규] router + 가드레일
 │   ├── graph.py             # [신규] LangGraph 그래프 조립 + LlmOrchestrator
 │   ├── report_llm.py        # [신규] report 에이전트 + assemble
 │   ├── orchestrator.py      # [변경] 기본 구현을 LlmOrchestrator로 교체
@@ -37,7 +37,7 @@ app/
 | `OPENAI_API_KEY` | `""` (빈 값 허용 — 미설정 시 LLM 미기동) | 인증 |
 | `OPENAI_MODEL_REPORT` | `gpt-5.5-2026-04-23` | report |
 | `OPENAI_MODEL_ANALYSIS` | `gpt-5.4-mini-2026-03-17` | 심층 3종 |
-| `OPENAI_MODEL_LIGHT` | `gpt-5.4-nano-2026-03-17` | planner·scan |
+| `OPENAI_MODEL_LIGHT` | `gpt-5.4-nano-2026-03-17` | router·scan |
 | `OPENAI_MAX_CONCURRENCY` | `4` | 전역 세마포어 상한 |
 | `OPENAI_MAX_RETRIES` | `3` | 429 지수 백오프 횟수 |
 | `OPENAI_MAX_INPUT_CHARS` | `120000` | 모달리티 입력 절단 상한 |
@@ -48,14 +48,14 @@ app/
 ### 2단계 — LLM 공통 계층 (`feat`)
 
 - `app/agents/llm.py`:
-  - (1) `make_llm(model, effort)` — `ChatOpenAI(model, reasoning_effort, max_retries)` 팩토리. reasoning effort 차등(planner·scan `low` / 심층 `medium` / report `high`).
+  - (1) `make_llm(model, effort)` — `ChatOpenAI(model, reasoning_effort, max_retries)` 팩토리. reasoning effort 차등(router·scan `low` / 심층 `medium` / report `high`).
   - (2) `llm_semaphore` — `asyncio.Semaphore(OPENAI_MAX_CONCURRENCY)` 전역 1개. 모든 호출을 `async with`로 감쌈.
   - (3) `truncate_input(text, max_chars, trigger_time)` — 절단 최후 방어선. 트리거 시각 주변 우선 보존 + 절단 사실 문구 삽입.
 - **완료 기준**: 절단 유틸 단위 테스트 통과 (LLM 호출 없음).
 
 ### 3단계 — 시스템 프롬프트 (`feat`)
 
-- `app/agents/prompts/` 에 md 7종 작성 — `_common`(출력 언어·정답 유출 금지·근거 없는 단정 금지), `planner`, `scan`, `log`, `metric`, `trace`, `report`.
+- `app/agents/prompts/` 에 md 7종 작성 — `_common`(출력 언어·정답 유출 금지·근거 없는 단정 금지), `router`, `scan`, `log`, `metric`, `trace`, `report`.
 - 로더 `load_prompt(name)` — `_common.md` + 해당 파일 결합, `functools.cache`.
 - 변수 자리는 `{window_start}` 플레이스홀더 — `ChatPromptTemplate` 바인딩.
 - **완료 기준**: 로더 단위 테스트 (7종 로드·공통부 결합·캐시) 통과.
@@ -72,19 +72,19 @@ app/
 
 ### 5단계 — 에이전트 구현 (`feat`)
 
-- `app/agents/schemas.py` — `PlanDecision`(모달리티별 `deep|scan` + reason), `ReportDraft`(RcaResult에서 evidence 제외).
+- `app/agents/schemas.py` — `RouteDecision`(모달리티별 `deep|scan` + reason), `ReportDraft`(RcaResult에서 evidence 제외).
 - `app/agents/modality_agents.py` — 심층 log/metric/trace + 경량 scan. structured output(`LogEvidence` 등), 기존 주입 시그니처(`(bundle) → Evidence`) 준수.
-- `app/agents/planner.py` — 메타데이터만 입력, structured output. 가드레일(코드 강제):
+- `app/agents/router.py` — 메타데이터만 입력, structured output. 가드레일(코드 강제):
   - (1) `triggered_by` 포함 모달리티 → 무조건 `deep` (승격 전용).
   - (2) 데이터 0건 → LLM 생략, "데이터 없음" Evidence.
-  - (3) planner 실패 → 전 모달리티 `deep`.
+  - (3) router 실패 → 전 모달리티 `deep`.
 - **완료 기준**: 가드레일 단위 테스트 (fake LLM 주입) 통과.
 
 ### 6단계 — LangGraph 조립 (`feat`)
 
 - `app/agents/report_llm.py` — report 에이전트(Evidence 3종 + 최소 컨텍스트 → `ReportDraft`) + assemble(코드가 evidence 주입, `origin_service` 승격).
 - `app/agents/graph.py` — `StateGraph` 조립:
-  - 노드: `planner → (log · metric · trace 병렬) → report → assemble`.
+  - 노드: `router → (log · metric · trace 병렬) → report → assemble`.
   - 각 모달리티 노드가 plan에 따라 deep/scan 선택, 실패 시 "분석 실패" Evidence로 완주.
   - `LlmOrchestrator.run(job_id, bundle) → RcaResult` — 기존 `RcaRunner` 시그니처 유지, 노드 에이전트 생성자 주입(테스트 대체용).
 - **완료 기준**: fake 에이전트 주입 그래프 테스트 (fan-out·부분 실패·가드레일 경로) 통과.
@@ -111,6 +111,6 @@ app/
 | 2 | `feat: LLM 공통 계층 추가 (모델 팩토리·세마포어·입력 절단)` |
 | 3 | `feat: 시스템 프롬프트 폴더 및 로더 추가` |
 | 4 | `feat: 번들 raw 압축기 구현 (log dedup·metric 통계·trace 집계)` |
-| 5 | `feat: planner·경량 스캔·심층 에이전트 구현` |
+| 5 | `feat: router·경량 스캔·심층 에이전트 구현` |
 | 6 | `feat: LangGraph 오케스트레이션 그래프 조립` |
 | 7 | `feat: LLM 오케스트레이터 교체 및 stub 에이전트 제거` |

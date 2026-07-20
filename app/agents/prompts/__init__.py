@@ -16,7 +16,7 @@ from pathlib import Path
 _PROMPT_DIR = Path(__file__).parent
 
 # 로드 가능한 프롬프트 이름(오타를 즉시 잡기 위한 화이트리스트)
-PROMPT_NAMES = ("planner", "scan", "log", "metric", "trace", "report")
+PROMPT_NAMES = ("router", "scan", "log", "metric", "trace", "report")
 
 
 @cache

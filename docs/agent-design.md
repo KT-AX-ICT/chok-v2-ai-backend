@@ -7,7 +7,7 @@ LangChain + LangGraph 기반이며, 기존 주입 계약([orchestrator.py](../ap
 
 | 역할 | 모델 (스냅샷 고정) | 근거 |
 |---|---|---|
-| planner (분석 계획) | `gpt-5.4-nano-2026-03-17` | 메타데이터만 보고 deep/scan을 고르는 분류 작업 — nano의 설계 용도 |
+| router (분석 계획) | `gpt-5.4-nano-2026-03-17` | 메타데이터만 보고 deep/scan을 고르는 분류 작업 — nano의 설계 용도 |
 | 경량 스캔 (비의심 모달리티) | `gpt-5.4-nano-2026-03-17` | "이상 징후 유무" 판단이 담긴 결론 생성. mini의 ¼ 비용 |
 | 모달리티 심층 분석 3종 | `gpt-5.4-mini-2026-03-17` | 대용량 raw 입력의 증거 추출·요약. 호출량이 많아 미니 티어로 비용 억제 |
 | RCA 리포트 (종합) | `gpt-5.5-2026-04-23` | 상관분석·rootCause 추론은 품질이 곧 제품. 입력이 정제된 Evidence뿐이라 토큰 부담 적음 |
@@ -19,7 +19,7 @@ LangChain + LangGraph 기반이며, 기존 주입 계약([orchestrator.py](../ap
 
 ```mermaid
 graph TD
-    IN[job_queue 워커: runner 호출] --> P[planner 노드<br/>nano · 분석 계획]
+    IN[job_queue 워커: runner 호출] --> P[router 노드<br/>nano · 분석 계획]
     P -->|모달리티별 deep/scan 결정| F{fan-out}
     F -->|deep| L[log 심층 에이전트<br/>mini]
     F -->|deep| M[metric 심층 에이전트<br/>mini]
@@ -41,23 +41,23 @@ graph TD
 
 ## 노드 상세
 
-### 1. planner (라우터)
+### 1. router (라우터)
 
 - **입력**: raw 데이터 없이 메타데이터만 — `trigger_info`(trigger_time, triggered_by), `modality_info` 구간 요약, 모달리티별 건수. 수백 토큰 수준.
 - **출력** (structured output): 모달리티별 `deep | scan` 결정 + 사유.
   ```json
   {"log": "deep", "metric": "scan", "trace": "deep", "reason": "..."}
   ```
-- **`triggered_by`의 위상**: SDK의 rule-based 1차 감지 신호일 뿐이므로 **승격 근거로만 쓰고, 강등 근거로 쓰지 않는다.** "triggered_by에 있으면 deep"은 하한선이고, 역방향("없으니 scan")은 성립하지 않는다 — 트리거에 안 걸린 모달리티의 deep/scan은 planner가 메타데이터(건수, 구간 status·침묵 구간 등)로 별도 판단한다.
+- **`triggered_by`의 위상**: SDK의 rule-based 1차 감지 신호일 뿐이므로 **승격 근거로만 쓰고, 강등 근거로 쓰지 않는다.** "triggered_by에 있으면 deep"은 하한선이고, 역방향("없으니 scan")은 성립하지 않는다 — 트리거에 안 걸린 모달리티의 deep/scan은 router가 메타데이터(건수, 구간 status·침묵 구간 등)로 별도 판단한다.
 - **판단 편향**: 애매하면 `deep` (프롬프트에 명시). 오판 비용이 비대칭 — 불필요한 deep은 mini 호출 1회 낭비지만, 잘못된 scan 강등은 정확도 손실.
 - **가드레일(코드 강제, LLM 판단보다 우선)**:
   - `triggered_by`에 포함된 모달리티는 무조건 `deep`.
   - 데이터가 0건인 모달리티는 LLM 없이 코드가 "데이터 없음" Evidence를 생성 (호출 생략).
-  - planner 호출 실패 시 전 모달리티 `deep` (안전 기본값).
+  - router 호출 실패 시 전 모달리티 `deep` (안전 기본값).
 
 ### 2. 경량 스캔 에이전트 (scan)
 
-- **역할**: planner가 비의심으로 분류한 모달리티에 대해 "이상 징후 유무"를 빠르게 판정한다. 리포트 에이전트가 "확인했고 정상"과 "확인 안 함"을 구분할 수 있어야 하므로, 개수 세기가 아닌 실제 판단이 필요하다.
+- **역할**: router가 비의심으로 분류한 모달리티에 대해 "이상 징후 유무"를 빠르게 판정한다. 리포트 에이전트가 "확인했고 정상"과 "확인 안 함"을 구분할 수 있어야 하므로, 개수 세기가 아닌 실제 판단이 필요하다.
 - **입력**: 심층 에이전트와 동일한 `parse_for_*_agent()` 산출물.
 - **출력**: 해당 모달리티의 Evidence (심층과 동일 스키마). `conclusion`에 이상 유무 판정을 담고, 특이 항목이 있으면 소수만 첨부.
 - **승격 루프는 두지 않는다** — scan이 이상을 발견해도 deep을 다시 호출하지 않고, 발견 내용을 Evidence에 담아 report가 판단하게 한다 (그래프 단순화, 토큰 상한 예측 가능).
@@ -79,17 +79,17 @@ graph TD
 
 ## 토큰 절약 전략
 
-1. planner가 raw를 안 본다 — 메타데이터만으로 분기 (nano).
+1. router가 raw를 안 본다 — 메타데이터만으로 분기 (nano).
 2. 비의심 모달리티는 nano 스캔으로 강등 — mini 대비 ¼ 비용. 데이터 0건이면 호출 자체를 생략.
 3. report는 정제된 Evidence만 입력 — raw 재투입 금지.
 4. evidence는 LLM 출력이 아니라 코드 주입 — 출력 토큰 절감.
-5. reasoning effort 차등: planner·scan `low`, 심층 `medium`, report `high`.
+5. reasoning effort 차등: router·scan `low`, 심층 `medium`, report `high`.
 
 ## 동시성·레이트리밋 (OpenAI Tier 1 기준)
 
 Tier 1 대략치: gpt-5 계열 **~500K TPM, 500~1,000 RPM** (모델별 정확값은 배포 전 platform.openai.com → Settings → Limits에서 재확인).
 
-**병목 분석** — RPM이 아니라 **TPM**이다. 잡당 LLM 호출은 최대 5회(planner + 모달리티 3 + report)로 호출 수는 미미하지만, 심층 분석 입력은 번들 raw 전체라 잡당 수만~수십만 토큰까지 커질 수 있다. 워커 2개 × 병렬 3 심층이 겹치면 분당 토큰이 TPM 한도에 닿아 429가 난다.
+**병목 분석** — RPM이 아니라 **TPM**이다. 잡당 LLM 호출은 최대 5회(router + 모달리티 3 + report)로 호출 수는 미미하지만, 심층 분석 입력은 번들 raw 전체라 잡당 수만~수십만 토큰까지 커질 수 있다. 워커 2개 × 병렬 3 심층이 겹치면 분당 토큰이 TPM 한도에 닿아 429가 난다.
 
 **제어 3계층**:
 
@@ -124,7 +124,7 @@ Tier 1 대략치: gpt-5 계열 **~500K TPM, 500~1,000 RPM** (모델별 정확값
 ```
 app/agents/prompts/
 ├── _common.md      # 공통 규칙: 출력 언어, 정답 유출 금지, 근거 없는 단정 금지 등
-├── planner.md
+├── router.md
 ├── scan.md         # 경량 스캔 공통 (모달리티는 변수로 주입)
 ├── log.md
 ├── metric.md
@@ -144,7 +144,7 @@ app/agents/prompts/
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL_REPORT=gpt-5.5-2026-04-23
 OPENAI_MODEL_ANALYSIS=gpt-5.4-mini-2026-03-17
-OPENAI_MODEL_LIGHT=gpt-5.4-nano-2026-03-17   # planner + scan 공용
+OPENAI_MODEL_LIGHT=gpt-5.4-nano-2026-03-17   # router + scan 공용
 OPENAI_MAX_CONCURRENCY=4                      # 전역 LLM 동시 호출 상한 (세마포어)
 OPENAI_MAX_RETRIES=3                          # 429 등 재시도 횟수 (지수 백오프)
 ```
@@ -158,6 +158,6 @@ OPENAI_MAX_RETRIES=3                          # 429 등 재시도 횟수 (지수
 3. 프롬프트 폴더 + 로더
 4. 모달리티 심층 에이전트 3종 (기존 시그니처 준수, structured output)
 5. 경량 스캔 에이전트 (심층과 동일 시그니처, 모달리티 파라미터화)
-6. planner + LangGraph 그래프 조립 (부분 실패 시 "분석 실패" Evidence 처리 포함)
+6. router + LangGraph 그래프 조립 (부분 실패 시 "분석 실패" Evidence 처리 포함)
 7. report 에이전트 + assemble
 8. `Orchestrator` 교체 주입 + 통합 테스트 (LLM 모킹, 기존 test_pipeline 계약 유지)
