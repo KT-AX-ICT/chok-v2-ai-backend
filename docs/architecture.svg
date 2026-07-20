@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 850" font-family="'Segoe UI','Malgun Gothic',sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7a8699"/>
+    </marker>
+    <marker id="arrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b8fd6"/>
+    </marker>
+    <marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57b47d"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="850" fill="#ffffff"/>
+
+  <text x="450" y="34" text-anchor="middle" font-size="20" font-weight="700" fill="#1c2530">RCA 오케스트레이션 구조</text>
+  <text x="450" y="56" text-anchor="middle" font-size="12" fill="#6b7684">모달리티마다 router 결정에 따라 deep · scan 중 하나만 실행</text>
+
+  <!-- START -->
+  <rect x="300" y="74" width="300" height="42" rx="8" fill="#eef1f5" stroke="#b7c0cc"/>
+  <text x="450" y="100" text-anchor="middle" font-size="13" fill="#2b3440">① job_queue 워커 — runner 호출</text>
+  <line x1="450" y1="116" x2="450" y2="145" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- router -->
+  <rect x="250" y="146" width="400" height="86" rx="10" fill="#e6f6ec" stroke="#57b47d" stroke-width="1.5"/>
+  <text x="450" y="171" text-anchor="middle" font-size="14" font-weight="700" fill="#1f6b40">router 노드　·　nano (LIGHT) · low</text>
+  <text x="450" y="193" text-anchor="middle" font-size="11" fill="#2b3440">메타데이터(건수·구간·트리거)만 → 모달리티별 deep | scan 결정</text>
+  <text x="450" y="214" text-anchor="middle" font-size="10.5" fill="#5a6572">가드레일(코드): triggered_by→deep · 0건→생략 · 실패→전부 deep</text>
+
+  <!-- fan-out to modality nodes -->
+  <line x1="450" y1="232" x2="150" y2="285" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="450" y1="232" x2="450" y2="285" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="450" y1="232" x2="750" y2="285" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="452" y="266" font-size="10" fill="#8a94a1">병렬 fan-out</text>
+
+  <!-- ===== modality column: reused 3x (cx = 150 / 450 / 750) ===== -->
+  <g>
+    <!-- ============ LOG (cx=150) ============ -->
+    <rect x="60" y="287" width="180" height="34" rx="8" fill="#f7f9fb" stroke="#aab4c0"/>
+    <text x="150" y="309" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1c2530">log 노드</text>
+    <text x="150" y="349" text-anchor="middle" font-size="9" font-style="italic" fill="#99a3af">택 1</text>
+    <!-- two diverging arrows -->
+    <line x1="150" y1="321" x2="94" y2="384" stroke="#5b8fd6" stroke-width="1.6" marker-end="url(#arrowB)"/>
+    <line x1="150" y1="321" x2="206" y2="384" stroke="#57b47d" stroke-width="1.6" marker-end="url(#arrowG)"/>
+    <text x="104" y="360" text-anchor="middle" font-size="9.5" font-weight="700" fill="#2f6fd0">deep</text>
+    <text x="196" y="360" text-anchor="middle" font-size="9.5" font-weight="700" fill="#2f9e5f">scan</text>
+    <!-- mode boxes -->
+    <rect x="33" y="386" width="110" height="44" rx="7" fill="#e7f0fc" stroke="#5b8fd6"/>
+    <text x="88" y="405" text-anchor="middle" font-size="11" font-weight="700" fill="#255397">deep</text>
+    <text x="88" y="421" text-anchor="middle" font-size="9" fill="#3a6bb0">mini · medium</text>
+    <rect x="157" y="386" width="110" height="44" rx="7" fill="#e6f6ec" stroke="#57b47d"/>
+    <text x="212" y="405" text-anchor="middle" font-size="11" font-weight="700" fill="#1f6b40">scan</text>
+    <text x="212" y="421" text-anchor="middle" font-size="9" fill="#2f8256">nano · low</text>
+    <!-- converge -->
+    <line x1="88" y1="430" x2="140" y2="456" stroke="#7a8699" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <line x1="212" y1="430" x2="160" y2="456" stroke="#7a8699" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <rect x="55" y="458" width="190" height="30" rx="7" fill="#f2f5f8" stroke="#cdd5de"/>
+    <text x="150" y="477" text-anchor="middle" font-size="10.5" fill="#2b3440">→ LogEvidence</text>
+
+    <!-- ============ METRIC (cx=450) ============ -->
+    <rect x="360" y="287" width="180" height="34" rx="8" fill="#f7f9fb" stroke="#aab4c0"/>
+    <text x="450" y="309" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1c2530">metric 노드</text>
+    <text x="450" y="349" text-anchor="middle" font-size="9" font-style="italic" fill="#99a3af">택 1</text>
+    <line x1="450" y1="321" x2="394" y2="384" stroke="#5b8fd6" stroke-width="1.6" marker-end="url(#arrowB)"/>
+    <line x1="450" y1="321" x2="506" y2="384" stroke="#57b47d" stroke-width="1.6" marker-end="url(#arrowG)"/>
+    <text x="404" y="360" text-anchor="middle" font-size="9.5" font-weight="700" fill="#2f6fd0">deep</text>
+    <text x="496" y="360" text-anchor="middle" font-size="9.5" font-weight="700" fill="#2f9e5f">scan</text>
+    <rect x="333" y="386" width="110" height="44" rx="7" fill="#e7f0fc" stroke="#5b8fd6"/>
+    <text x="388" y="405" text-anchor="middle" font-size="11" font-weight="700" fill="#255397">deep</text>
+    <text x="388" y="421" text-anchor="middle" font-size="9" fill="#3a6bb0">mini · medium</text>
+    <rect x="457" y="386" width="110" height="44" rx="7" fill="#e6f6ec" stroke="#57b47d"/>
+    <text x="512" y="405" text-anchor="middle" font-size="11" font-weight="700" fill="#1f6b40">scan</text>
+    <text x="512" y="421" text-anchor="middle" font-size="9" fill="#2f8256">nano · low</text>
+    <line x1="388" y1="430" x2="440" y2="456" stroke="#7a8699" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <line x1="512" y1="430" x2="460" y2="456" stroke="#7a8699" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <rect x="355" y="458" width="190" height="30" rx="7" fill="#f2f5f8" stroke="#cdd5de"/>
+    <text x="450" y="477" text-anchor="middle" font-size="10.5" fill="#2b3440">→ MetricEvidence</text>
+
+    <!-- ============ TRACE (cx=750) ============ -->
+    <rect x="660" y="287" width="180" height="34" rx="8" fill="#f7f9fb" stroke="#aab4c0"/>
+    <text x="750" y="309" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1c2530">trace 노드</text>
+    <text x="750" y="349" text-anchor="middle" font-size="9" font-style="italic" fill="#99a3af">택 1</text>
+    <line x1="750" y1="321" x2="694" y2="384" stroke="#5b8fd6" stroke-width="1.6" marker-end="url(#arrowB)"/>
+    <line x1="750" y1="321" x2="806" y2="384" stroke="#57b47d" stroke-width="1.6" marker-end="url(#arrowG)"/>
+    <text x="704" y="360" text-anchor="middle" font-size="9.5" font-weight="700" fill="#2f6fd0">deep</text>
+    <text x="796" y="360" text-anchor="middle" font-size="9.5" font-weight="700" fill="#2f9e5f">scan</text>
+    <rect x="633" y="386" width="110" height="44" rx="7" fill="#e7f0fc" stroke="#5b8fd6"/>
+    <text x="688" y="405" text-anchor="middle" font-size="11" font-weight="700" fill="#255397">deep</text>
+    <text x="688" y="421" text-anchor="middle" font-size="9" fill="#3a6bb0">mini · medium</text>
+    <rect x="757" y="386" width="110" height="44" rx="7" fill="#e6f6ec" stroke="#57b47d"/>
+    <text x="812" y="405" text-anchor="middle" font-size="11" font-weight="700" fill="#1f6b40">scan</text>
+    <text x="812" y="421" text-anchor="middle" font-size="9" fill="#2f8256">nano · low</text>
+    <line x1="688" y1="430" x2="740" y2="456" stroke="#7a8699" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <line x1="812" y1="430" x2="760" y2="456" stroke="#7a8699" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <rect x="655" y="458" width="190" height="30" rx="7" fill="#f2f5f8" stroke="#cdd5de"/>
+    <text x="750" y="477" text-anchor="middle" font-size="10.5" fill="#2b3440">→ TraceEvidence</text>
+  </g>
+
+  <!-- evidence -> join -->
+  <line x1="150" y1="488" x2="335" y2="521" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="450" y1="488" x2="450" y2="521" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="750" y1="488" x2="565" y2="521" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- join -->
+  <rect x="250" y="522" width="400" height="32" rx="8" fill="#eef1f5" stroke="#b7c0cc"/>
+  <text x="450" y="543" text-anchor="middle" font-size="12" fill="#2b3440">join — Evidence 3종 수집</text>
+  <line x1="450" y1="554" x2="450" y2="581" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- report -->
+  <rect x="250" y="582" width="400" height="74" rx="10" fill="#f0e9fb" stroke="#9a72d4" stroke-width="1.5"/>
+  <text x="450" y="608" text-anchor="middle" font-size="14" font-weight="700" fill="#5a34a0">report 노드　·　gpt-5.5 (REPORT) · high</text>
+  <text x="450" y="631" text-anchor="middle" font-size="11" fill="#2b3440">Evidence 3종 + 최소 컨텍스트 → ReportDraft</text>
+  <text x="450" y="648" text-anchor="middle" font-size="10" fill="#5a6572">raw 재투입 없음 (상관분석·rootCause 추론)</text>
+  <line x1="450" y1="656" x2="450" y2="679" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- assemble -->
+  <rect x="250" y="680" width="400" height="50" rx="10" fill="#eef1f5" stroke="#b7c0cc"/>
+  <text x="450" y="702" text-anchor="middle" font-size="12.5" font-weight="700" fill="#2b3440">assemble (코드)</text>
+  <text x="450" y="720" text-anchor="middle" font-size="10.5" fill="#5a6572">evidence 코드 주입 · origin_service 승격 → RcaResult</text>
+  <line x1="450" y1="730" x2="450" y2="752" stroke="#7a8699" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- END -->
+  <rect x="300" y="753" width="300" height="42" rx="8" fill="#eef1f5" stroke="#b7c0cc"/>
+  <text x="450" y="779" text-anchor="middle" font-size="13" fill="#2b3440">END — 검증(5키) → Spring POST</text>
+
+  <!-- legend -->
+  <line x1="24" y1="816" x2="876" y2="816" stroke="#e0e5ea"/>
+  <rect x="60" y="826" width="14" height="14" rx="3" fill="#e6f6ec" stroke="#57b47d"/>
+  <text x="80" y="837" font-size="11" fill="#2b3440">nano — router · scan</text>
+  <rect x="280" y="826" width="14" height="14" rx="3" fill="#e7f0fc" stroke="#5b8fd6"/>
+  <text x="300" y="837" font-size="11" fill="#2b3440">mini — deep</text>
+  <rect x="470" y="826" width="14" height="14" rx="3" fill="#f0e9fb" stroke="#9a72d4"/>
+  <text x="490" y="837" font-size="11" fill="#2b3440">gpt-5.5 — report</text>
+  <rect x="690" y="826" width="14" height="14" rx="3" fill="#eef1f5" stroke="#b7c0cc"/>
+  <text x="710" y="837" font-size="11" fill="#2b3440">코드 (LLM 아님)</text>
+</svg>
