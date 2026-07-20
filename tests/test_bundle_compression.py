@@ -47,6 +47,22 @@ def test_log_dedup_keeps_rare_line_and_sorts_errors_first():
     assert "×2" in out
 
 
+def test_log_dedup_generalizes_unseen_format():
+    """사전에 하드코딩 안 된 시스템 로그 형식도 가변부(경로·PID·호스트)를 학습해 dedup."""
+    items = [
+        _item(
+            f"2026-01-15T10:00:{i:02d}Z",
+            "kernel",
+            f"sshd[{4000 + i}]: Accepted publickey for deploy from 10.0.{i}.5 port {50000 + i}",
+        )
+        for i in range(30)
+    ]
+    out = compress_logs(items)
+    # 30건이 소수 패턴으로 수렴 — 정규식 3종엔 없던 sshd/포트/호스트 형식
+    assert "30건 → 1패턴" in out
+    assert "×30" in out
+
+
 def test_log_empty():
     assert compress_logs([]) == "(없음)"
 

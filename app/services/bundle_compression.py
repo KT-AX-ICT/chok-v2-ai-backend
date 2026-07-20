@@ -1,8 +1,8 @@
 """번들 raw 압축기 — 모달리티별 무손실에 가까운 재표현.
 
 규칙 문서: docs/bundle-compression.md (실데이터 검증 근거 포함)
-  - log    : 템플릿화(dedup) — 가변부 마스킹 후 동일 패턴을 1줄로 축약, 원문 샘플 유지
-  - metric : 시리즈별 baseline/incident 통계 + onset·peak 이상점
+  - log    : Drain 템플릿 마이닝으로 dedup — 가변부를 데이터에서 학습, 원문 샘플 유지
+  - metric : 시리즈별 baseline/incident 통계 + onset·peak 이상점 (JSON·key=value 지원)
   - trace  : (서비스, 오퍼레이션) 집계 + 서비스별 볼륨 타임라인 + exemplar 원문
 
 공통 표현 규칙:
@@ -19,6 +19,10 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from statistics import mean, pstdev
+
+from drain3 import TemplateMiner
+from drain3.masking import MaskingInstruction
+from drain3.template_miner_config import TemplateMinerConfig
 
 from app.schemas.contracts import ModalityItem
 
@@ -54,30 +58,41 @@ _LEVEL_RE = re.compile(r"\b(FATAL|CRITICAL|ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE)\
 # 레벨 정렬 우선순위 — 에러·경고 패턴을 먼저 보여준다
 _LEVEL_ORDER = {"FATAL": 0, "CRITICAL": 0, "ERROR": 0, "WARN": 1, "WARNING": 1}
 
-# 가변부 마스킹: 시각 → <ts>, req_id → <id>, 긴 숫자열(4자리 이상) → <n>
-_TS_IN_RAW_RE = re.compile(
-    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?|\d{2}:\d{2}:\d{2}(?:\.\d+)?"
-)
-_REQ_ID_RE = re.compile(r"\b(req_id|trace_id|span_id)[=:]\s*\S+", re.I)
-_LONG_NUM_RE = re.compile(r"\d{4,}")
+# 고카디널리티 토큰은 Drain 클러스터링 전에 마스킹해 템플릿을 안정화한다.
+# (나머지 가변부 — 유저ID·경로·호스트명 등 — 는 Drain이 데이터에서 학습)
+_MASKING = [
+    MaskingInstruction(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?", "TS"),
+    MaskingInstruction(r"\d{2}:\d{2}:\d{2}(?:\.\d+)?", "TS"),
+    MaskingInstruction(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "IP"),
+    MaskingInstruction(r"\b[0-9a-fA-F]{8,}\b", "HEX"),
+    MaskingInstruction(r"\b\d{4,}\b", "NUM"),
+]
 
 
-def _log_template(raw: str) -> str:
-    masked = _TS_IN_RAW_RE.sub("<ts>", raw)
-    masked = _REQ_ID_RE.sub(lambda m: f"{m.group(1)}=<id>", masked)
-    return _LONG_NUM_RE.sub("<n>", masked)
+def _make_miner() -> TemplateMiner:
+    """번들 1건 처리용 Drain 템플릿 마이너. 상태를 공유하지 않도록 호출마다 새로 만든다."""
+    config = TemplateMinerConfig()
+    config.masking_instructions = _MASKING
+    config.profiling_enabled = False
+    return TemplateMiner(config=config)
 
 
 def compress_logs(items: list[ModalityItem]) -> str:
-    """동일 패턴을 `서비스·레벨·×횟수·최초~최후·샘플` 1줄로 축약. 희귀 라인은 그대로 1줄."""
+    """Drain으로 로그 템플릿을 학습해 `서비스·레벨·×횟수·최초~최후·샘플` 1줄로 축약.
+
+    정규식 하드코딩 패턴이 아니라 데이터에서 템플릿을 추출하므로, 사전에 모르는
+    로그·시스템 로그 형식도 가변부를 학습해 dedup한다. 희귀 라인은 자기 클러스터로 남는다.
+    """
     if not items:
         return _EMPTY
 
+    miner = _make_miner()
     groups: dict[tuple, dict] = {}
     for item in items:
         level_m = _LEVEL_RE.search(item.raw)
         level = level_m.group(1).upper() if level_m else "-"
-        key = (item.service, level, _log_template(item.raw))
+        cluster = miner.add_log_message(item.raw)
+        key = (item.service, level, cluster["cluster_id"])
         g = groups.get(key)
         if g is None:
             groups[key] = {
