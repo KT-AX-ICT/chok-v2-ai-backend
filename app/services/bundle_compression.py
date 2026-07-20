@@ -107,7 +107,45 @@ def compress_logs(items: list[ModalityItem]) -> str:
 
 # ------------------------------------------------------------ metric 통계
 
+# key=value 텍스트 폴백용 (예: "cpu_usage=53.5 mem=1200")
 _PAIR_RE = re.compile(r"([A-Za-z_][\w.%-]*)=([-+]?\d+(?:\.\d+)?)")
+# name·value 쌍 JSON에서 라벨/값 키 후보 (예: {"metric": "cpu", "value": 0.85})
+_METRIC_NAME_KEYS = ("metric", "name", "__name__", "metric_name")
+_METRIC_VALUE_KEYS = ("value", "val", "v")
+
+
+def _num(v) -> float | None:
+    """숫자만 float로. bool은 int subclass라 명시적으로 제외."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    return float(v)
+
+
+def _metric_pairs(raw: str) -> list[tuple[str, float]]:
+    """raw에서 (라벨, 값) 추출. 지원 형식(넓은 순):
+
+      1) 평면 JSON      {"cpu_usage": 53.5, "mem": 1200}  → 숫자 필드 전부
+      2) name·value JSON {"metric": "cpu", "value": 53.5}  → 라벨=name, 값=value
+      3) key=value 텍스트 "cpu_usage=53.5 mem=1200"        → 정규식 폴백
+
+    셋 다 실패하면 [] — 호출부가 원문 통과 처리.
+    """
+    try:
+        d = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        d = None
+    if isinstance(d, dict):
+        # 형태 2 우선: name/value 쌍이 명시된 경우 그 의미를 살린다
+        name = next((v for k in _METRIC_NAME_KEYS if (v := d.get(k)) and isinstance(v, str)), None)
+        value = next((n for k in _METRIC_VALUE_KEYS if (n := _num(d.get(k))) is not None), None)
+        if name is not None and value is not None:
+            return [(name, value)]
+        # 형태 1: 숫자 필드 전부를 라벨=키로
+        pairs = [(k, n) for k, v in d.items() if (n := _num(v)) is not None]
+        if pairs:
+            return pairs
+    # 형태 3: key=value 텍스트
+    return [(label, float(value)) for label, value in _PAIR_RE.findall(raw)]
 
 
 def _series_stats(points: list[tuple[datetime | None, float]]) -> str:
@@ -123,13 +161,13 @@ def compress_metrics(items: list[ModalityItem], trigger_time: str) -> str:
     series: dict[tuple[str, str], list] = defaultdict(list)
     unparsed: list[ModalityItem] = []
     for item in items:
-        pairs = _PAIR_RE.findall(item.raw)
+        pairs = _metric_pairs(item.raw)
         if not pairs:
             unparsed.append(item)
             continue
         for label, value in pairs:
             series[(item.service, label)].append(
-                (_parse_ts(item.timestamp), item.timestamp, float(value))
+                (_parse_ts(item.timestamp), item.timestamp, value)
             )
 
     trigger_dt = _parse_ts(trigger_time)
@@ -182,7 +220,10 @@ def _span_fields(item: ModalityItem) -> tuple[str, float | None, bool]:
     except (json.JSONDecodeError, TypeError):
         d = None
     if isinstance(d, dict):
-        operation = d.get("operation") or d.get("operationName") or d.get("to") or "?"
+        # name: OTel 스팬 표준 키. operation/operationName 뒤, to 앞 순위
+        operation = (
+            d.get("operation") or d.get("operationName") or d.get("name") or d.get("to") or "?"
+        )
         if (v := d.get("duration_us")) is not None:
             duration_ms = float(v) / 1000
         elif (v := d.get("duration_ms")) is not None:

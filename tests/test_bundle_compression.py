@@ -72,6 +72,35 @@ def test_metric_detects_onset_and_peak():
     assert "base n=6" in out and "incid n=3" in out
 
 
+def test_metric_parses_flat_json():
+    """평면 JSON 메트릭: {"cpu_usage": ...} — 통계 산출(원문 통과 아님)."""
+    items = [
+        _item(f"2026-01-15T10:00:{i:02d}Z", "node", f'{{"cpu_usage": {2.0 + 0.1 * i}}}')
+        for i in range(6)
+    ] + [_item("2026-01-15T10:02:00Z", "node", '{"cpu_usage": 86.8}')]
+    out = compress_metrics(items, trigger_time="2026-01-15T10:01:30Z")
+    assert "node\tcpu_usage" in out
+    assert "peak=86.8@10:02:00" in out
+    assert "미파싱 원문 통과" not in out  # JSON도 파싱됨
+
+
+def test_metric_parses_name_value_json():
+    """name·value 쌍 JSON: {"metric": "cpu", "value": ...} — 라벨은 metric 값."""
+    items = [
+        _item(f"2026-01-15T10:00:{i:02d}Z", "node", f'{{"metric": "cpu", "value": {2.0 + i}}}')
+        for i in range(3)
+    ]
+    out = compress_metrics(items, trigger_time="2026-01-15T10:01:30Z")
+    assert "node\tcpu" in out  # value 키가 아니라 metric 값이 라벨
+
+
+def test_metric_json_bool_is_not_a_metric():
+    """bool 필드는 숫자로 오인하지 않는다 (isinstance(True, int) 함정)."""
+    items = [_item("2026-01-15T10:00:00Z", "svc", '{"healthy": true}')]
+    out = compress_metrics(items, trigger_time="2026-01-15T10:01:30Z")
+    assert "미파싱 원문 통과" in out  # 숫자 없음 → 통과
+
+
 def test_metric_unparsable_falls_back_to_raw():
     items = [_item("2026-01-15T10:00:00Z", "svc-a", "이상한 형식의 메트릭")]
     out = compress_metrics(items, trigger_time="2026-01-15T10:01:30Z")
@@ -107,6 +136,20 @@ def test_trace_aggregates_and_keeps_exemplars():
     assert "exemplar 원문" in out
     assert "TIMEOUT" in out  # 에러 스팬 원문 보존
     assert "10:01=10 10:02=1" in out  # 분단위 볼륨 타임라인
+
+
+def test_trace_extracts_otel_name_key():
+    """OTel 스팬은 오퍼레이션을 name 키에 담는다 — operation 없이도 인식."""
+    items = [
+        _item(
+            "2026-01-15T10:01:00Z",
+            "compose-post",
+            '{"name": "upload_media", "duration_ms": 12, "status": "OK"}',
+        )
+    ]
+    out = compress_traces(items)
+    assert "compose-post\tupload_media\t×1" in out  # name이 오퍼레이션으로 승격
+    assert "\t?\t" not in out  # 미상(?)으로 강등되지 않음
 
 
 def test_trace_regex_fallback_for_plain_text():
