@@ -110,6 +110,21 @@ def test_metric_parses_name_value_json():
     assert "node\tcpu" in out  # value 키가 아니라 metric 값이 라벨
 
 
+def test_metric_parses_prometheus_exposition():
+    """Prometheus 노출형: 'node_cpu{labels} value' — 라벨셋 드롭, 지표명으로 시리즈."""
+    items = [
+        _item(
+            f"2026-01-15T10:00:{i:02d}Z",
+            "node",
+            f'node_cpu_seconds{{instance="node-exporter:9100"}} {2.0 + i}',
+        )
+        for i in range(3)
+    ]
+    out = compress_metrics(items, trigger_time="2026-01-15T10:01:30Z")
+    assert "node\tnode_cpu_seconds" in out
+    assert "미파싱 원문 통과" not in out
+
+
 def test_metric_json_bool_is_not_a_metric():
     """bool 필드는 숫자로 오인하지 않는다 (isinstance(True, int) 함정)."""
     items = [_item("2026-01-15T10:00:00Z", "svc", '{"healthy": true}')]

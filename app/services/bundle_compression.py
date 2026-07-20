@@ -124,6 +124,13 @@ def compress_logs(items: list[ModalityItem]) -> str:
 
 # key=value 텍스트 폴백용 (예: "cpu_usage=53.5 mem=1200")
 _PAIR_RE = re.compile(r"([A-Za-z_][\w.%-]*)=([-+]?\d+(?:\.\d+)?)")
+# Prometheus 노출형: name{labels}? value [ts]?  (예: 'node_cpu{instance="n:9100"} 2.22')
+_PROM_RE = re.compile(
+    r"^(?P<name>[A-Za-z_:][A-Za-z0-9_:]*)"
+    r"(?:\{[^}]*\})?"
+    r"\s+(?P<value>[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
+    r"(?:\s+\d+)?\s*$"
+)
 # name·value 쌍 JSON에서 라벨/값 키 후보 (예: {"metric": "cpu", "value": 0.85})
 _METRIC_NAME_KEYS = ("metric", "name", "__name__", "metric_name")
 _METRIC_VALUE_KEYS = ("value", "val", "v")
@@ -139,11 +146,12 @@ def _num(v) -> float | None:
 def _metric_pairs(raw: str) -> list[tuple[str, float]]:
     """raw에서 (라벨, 값) 추출. 지원 형식(넓은 순):
 
-      1) 평면 JSON      {"cpu_usage": 53.5, "mem": 1200}  → 숫자 필드 전부
-      2) name·value JSON {"metric": "cpu", "value": 53.5}  → 라벨=name, 값=value
-      3) key=value 텍스트 "cpu_usage=53.5 mem=1200"        → 정규식 폴백
+      1) 평면 JSON       {"cpu_usage": 53.5, "mem": 1200}     → 숫자 필드 전부
+      2) name·value JSON {"metric": "cpu", "value": 53.5}     → 라벨=name, 값=value
+      3) Prometheus 노출형 'node_cpu{instance="n:9100"} 2.22' → 라벨=지표명 (라벨셋 드롭)
+      4) key=value 텍스트 "cpu_usage=53.5 mem=1200"           → 정규식 폴백
 
-    셋 다 실패하면 [] — 호출부가 원문 통과 처리.
+    모두 실패하면 [] — 호출부가 원문 통과 처리.
     """
     try:
         d = json.loads(raw)
@@ -159,7 +167,10 @@ def _metric_pairs(raw: str) -> list[tuple[str, float]]:
         pairs = [(k, n) for k, v in d.items() if (n := _num(v)) is not None]
         if pairs:
             return pairs
-    # 형태 3: key=value 텍스트
+    # 형태 3: Prometheus 노출형 (라벨셋은 드롭 — 지표명 + service 그룹핑으로 충분)
+    if m := _PROM_RE.match(raw.strip()):
+        return [(m.group("name"), float(m.group("value")))]
+    # 형태 4: key=value 텍스트
     return [(label, float(value)) for label, value in _PAIR_RE.findall(raw)]
 
 
