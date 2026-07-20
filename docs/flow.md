@@ -10,23 +10,27 @@ sequenceDiagram
     participant API as POST /ingest
     participant DB as MySQL (IngestJob)
     participant Q as job_queue 워커
+    participant A as 에이전트 오케스트레이터
     participant V as rca_validation
     participant S as Spring 게이트웨이
 
     SDK->>API: IngestBundle (window, trigger_info, logs/metrics/traces)
     API->>DB: IngestJob 기록 (PENDING)
     API-->>SDK: job_id 즉시 반환 (201)
-    API->>Q: enqueue(job_id, bundle)
-    Q->>Q: RCA 수행 (RUNNING)
-    Q->>V: detail 5키 계약 검증
-    Q->>S: PATCH DONE (RcaResult)
+    API->>Q: enqueue(job_id)
+    Q->>DB: job_id로 번들 조회
+    Q->>A: RCA 위임 (RUNNING)
+    A->>A: 모달리티 에이전트(log/metric/trace) + 종합
+    A-->>Q: RcaResult
+    Q->>V: 전송 전 검증 (detail 5키 계약)
+    Q->>S: POST (스냅샷 번들 + 리포트 일괄 전송)
     Q->>DB: 상태 갱신 (DONE / FAILED + 실패 사유)
 ```
 
-1. **수신** — 수집기가 `POST /ingest`로 `IngestBundle`을 전송하면, `IngestJob(PENDING)`만 DB에 기록하고 `job_id`를 즉시 반환한다. 실제 분석은 큐에 위임한다.
-2. **비동기 RCA** — `job_queue`의 asyncio 워커 풀이 잡을 꺼내 RCA를 수행한다. 현재 runner는 stub이며, 추후 `app/agents/`의 오케스트레이터로 교체 예정.
-3. **계약 검증** — 산출물은 `rca_validation`이 detail 5키(`rca`, `summary`, `evidence`, `impact`, `actions`) 계약을 검증한다. 5키는 프론트 상세 탭과 1:1 고정. 위반 시 잡은 FAILED 처리.
-4. **결과 전달** — 최종 `RcaResult`(type / severity / service + detail)를 `spring_client`가 Spring 게이트웨이로 PATCH DONE 전송한다.
+1. **수신** — 수집기가 `POST /ingest`로 `IngestBundle`을 전송하면, `IngestJob(PENDING)`만 DB에 기록하고 `job_id`를 즉시 반환한다. 큐에는 `job_id`만 넘기고 번들은 넘기지 않는다.
+2. **비동기 RCA** — `job_queue`의 asyncio 워커 풀이 `job_id`를 꺼내 DB에서 번들을 다시 조회한 뒤, 에이전트 오케스트레이터에 RCA를 위임한다. 오케스트레이터는 모달리티 에이전트(log / metric / trace) + 종합 에이전트를 거쳐 `RcaResult`를 워커에 돌려준다. 현재 오케스트레이터는 stub이다(향후 계획 참조).
+3. **전송 전 검증** — Spring으로 보내기 전에 `rca_validation`이 detail 5키(`rca`, `summary`, `evidence`, `impact`, `actions`) 계약을 검증한다. 5키는 프론트 상세 탭과 1:1 고정. 위반 시 잡은 FAILED 처리되고 전송하지 않는다.
+4. **결과 전달** — 모든 처리가 끝난 뒤, 스냅샷 번들과 리포트(`RcaResult`: type / severity / service + detail)를 `spring_client`가 Spring 게이트웨이로 단일 POST로 일괄 전송한다.
 
 ## 잡 수명주기
 

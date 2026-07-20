@@ -9,3 +9,6 @@ __pycache__/
 # 테스트·캐시
 .pytest_cache/
 .ruff_cache/
+
+# 임시 파일 (PR 초안 등 — 커밋 대상 아님)
+tmp/

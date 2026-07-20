@@ -9,14 +9,12 @@
 
 from __future__ import annotations
 
-from app.schemas.contracts import IngestBundle, ModalityItem
-
-
-def _items_to_text(items: list[ModalityItem]) -> str:
-    """ModalityItem 목록을 LLM용 텍스트 블록으로 변환."""
-    if not items:
-        return "(없음)"
-    return "\n".join(f"[{item.timestamp}] {item.raw}" for item in items)
+from app.schemas.contracts import IngestBundle
+from app.services.bundle_compression import (
+    compress_logs,
+    compress_metrics,
+    compress_traces,
+)
 
 
 def _interval_summary(intervals) -> str:
@@ -38,7 +36,7 @@ def parse_for_log_agent(bundle: IngestBundle) -> dict:
         "trigger_time": bundle.trigger_info.trigger_time,
         "triggered_by": bundle.trigger_info.triggered_by,
         "log_intervals": _interval_summary(bundle.modality_info.log.intervals),
-        "logs": _items_to_text(bundle.logs),
+        "logs": compress_logs(bundle.logs),
     }
 
 
@@ -49,7 +47,7 @@ def parse_for_metric_agent(bundle: IngestBundle) -> dict:
         "trigger_time": bundle.trigger_info.trigger_time,
         "triggered_by": bundle.trigger_info.triggered_by,
         "metric_intervals": _interval_summary(bundle.modality_info.metric.intervals),
-        "metrics": _items_to_text(bundle.metrics),
+        "metrics": compress_metrics(bundle.metrics, bundle.trigger_info.trigger_time),
     }
 
 
@@ -60,5 +58,5 @@ def parse_for_trace_agent(bundle: IngestBundle) -> dict:
         "trigger_time": bundle.trigger_info.trigger_time,
         "triggered_by": bundle.trigger_info.triggered_by,
         "trace_intervals": _interval_summary(bundle.modality_info.trace.intervals),
-        "traces": _items_to_text(bundle.traces),
+        "traces": compress_traces(bundle.traces),
     }

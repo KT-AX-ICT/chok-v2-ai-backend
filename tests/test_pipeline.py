@@ -1,24 +1,23 @@
-"""RCA 파이프라인(오케스트레이터 + 얕은 에이전트) 및 풀 사이클 테스트."""
+"""RCA 파이프라인(LLM 오케스트레이터 + 큐) 통합 테스트 — LLM 실호출 없음(fake 주입)."""
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.agents.orchestrator import Orchestrator, orchestrator
+import app.agents.orchestrator as orchestrator_mod
+from app.agents.graph import LlmOrchestrator
+from app.agents.schemas import MODALITIES, ReportDraft, RouteDecision
 from app.db.models import IngestJob
 from app.db.session import Base
 from app.schemas.contracts import (
     Actions,
     Affected,
-    Evidence,
     Impact,
     IngestBundle,
     LogEvidence,
     MetricEvidence,
     Rca,
-    RcaResult,
-    ReportDetail,
     Summary,
     TraceEvidence,
 )
@@ -47,6 +46,44 @@ def _bundle(with_data: bool = True) -> IngestBundle:
     return IngestBundle(**base)
 
 
+def _fake_orchestrator(
+    trace_origin: str | None = "media-service",
+    draft_service: str = "unknown",
+    draft_type: str = "Unknown",
+) -> LlmOrchestrator:
+    """LLM 노드 전부를 fake로 채운 오케스트레이터 — 그래프 배선은 실제 그대로."""
+
+    async def router(bundle):
+        return RouteDecision(log="deep", metric="deep", trace="deep", reason="테스트")
+
+    evidences = {
+        "log": LogEvidence(conclusion="로그 결론"),
+        "metric": MetricEvidence(conclusion="메트릭 결론"),
+        "trace": TraceEvidence(conclusion="트레이스 결론", origin_service=trace_origin),
+    }
+
+    def make(modality):
+        async def agent(bundle):
+            return evidences[modality]
+
+        return agent
+
+    agents = {(m, d): make(m) for m in MODALITIES for d in ("deep", "scan")}
+
+    async def report(bundle, log_ev, metric_ev, trace_ev):
+        return ReportDraft(
+            type=draft_type,
+            severity="MID",
+            service=draft_service,
+            rca=Rca(rootCause="rc", propagation="p"),
+            summary=Summary(highlight="h"),
+            impact=Impact(affected=[Affected(service=draft_service)]),
+            actions=Actions(steps=["s"]),
+        )
+
+    return LlmOrchestrator(router=router, agents=agents, report_agent=report)
+
+
 @pytest.fixture()
 async def factory():
     engine = create_async_engine(
@@ -71,7 +108,7 @@ async def _seed_job(factory, bundle: IngestBundle) -> int:
 
 
 async def test_orchestrator_returns_valid_rca_result():
-    result = await orchestrator.run(1, _bundle())
+    result = await _fake_orchestrator().run(1, _bundle())
     # 5키 계약 통과 + 대표 서비스는 trace origin 우선
     validate_rca_result(result.model_dump(by_alias=True, exclude_none=True))
     assert result.service == "media-service"
@@ -85,38 +122,26 @@ async def test_orchestrator_returns_valid_rca_result():
 
 
 async def test_empty_modalities_still_valid():
-    result = await orchestrator.run(1, _bundle(with_data=False))
+    """전 모달리티 0건 → LLM 생략 + '데이터 없음' Evidence로도 계약 유지."""
+    result = await _fake_orchestrator(trace_origin=None).run(1, _bundle(with_data=False))
     validate_rca_result(result.model_dump(by_alias=True, exclude_none=True))
-    assert result.service == "unknown"
+    assert result.service == "unknown"  # trace origin 없으면 draft.service
+    assert "데이터 없음" in result.detail.evidence.log.conclusion
 
 
 async def test_agents_are_swappable():
-    """오케스트레이터 본문 변경 없이 report 에이전트만 갈아끼워진다."""
-
-    async def fake_report(bundle, log_ev, metric_ev, trace_ev) -> RcaResult:
-        return RcaResult(
-            type="Swapped",
-            severity="LOW",
-            service="SWAPPED",
-            detail=ReportDetail(
-                rca=Rca(rootCause="rc", propagation="p"),
-                summary=Summary(highlight="h"),
-                evidence=Evidence(
-                    log=log_ev, trace=trace_ev, metric=metric_ev
-                ),
-                impact=Impact(affected=[Affected(service="SWAPPED")]),
-                actions=Actions(steps=["s"]),
-            ),
-        )
-
-    swapped = Orchestrator(report_agent=fake_report)
+    """그래프 본문 변경 없이 노드 에이전트만 갈아끼워진다."""
+    swapped = _fake_orchestrator(
+        trace_origin=None, draft_service="SWAPPED", draft_type="Swapped"
+    )
     result = await swapped.run(1, _bundle())
     assert result.service == "SWAPPED"
     assert result.type == "Swapped"
 
 
-async def test_full_pipeline_through_queue_reaches_done(factory):
-    """POST 이후 흐름: 큐 → 오케스트레이터 → 검증 → DONE + result 저장."""
+async def test_full_pipeline_through_queue_reaches_done(factory, monkeypatch):
+    """POST 이후 흐름: 큐 → LLM 오케스트레이터(fake) → 검증 → DONE + result 저장."""
+    monkeypatch.setattr(orchestrator_mod, "orchestrator", _fake_orchestrator())
     q = RcaJobQueue(concurrency=1, session_factory=factory)  # 기본 runner = 오케스트레이터
     bundle = _bundle()
     job_id = await _seed_job(factory, bundle)
