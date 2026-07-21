@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # 로그 레벨 (DEBUG/INFO/WARNING/ERROR). 중앙 로깅 설정(core.logging_config)에서 사용.
     log_level: str = "INFO"
 
+    # 기동 시 테이블 자동 생성(create_all). 운영은 Alembic 마이그레이션을 쓰므로 기본 off.
+    # 로컬 편의용으로만 켠다(DB_AUTO_CREATE=true).
+    db_auto_create: bool = False
+
     # RCA job 동시 처리 상한(워커 수). 수집기 폭주 시 병렬 처리량 제어.
     rca_worker_concurrency: int = 2
 

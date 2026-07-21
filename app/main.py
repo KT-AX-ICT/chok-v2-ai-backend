@@ -24,11 +24,13 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "OPENAI_API_KEY 미설정 — 실서버 기동 거부 (무키 기동은 테스트 전용)"
         )
-    try:
-        await init_db()
-    except Exception:
-        # DB는 소프트 — 미연결이어도 기동 허용(원인은 남김). readiness는 /health로 판단.
-        logger.warning("init_db 실패 — DB 미연결 상태로 기동 계속", exc_info=True)
+    # 스키마는 Alembic 마이그레이션이 소유. 로컬 편의로 켤 때만 create_all(멱등).
+    if settings.db_auto_create:
+        try:
+            await init_db()
+        except Exception:
+            # DB는 소프트 — 미연결이어도 기동 허용(원인은 남김). readiness는 /health로 판단.
+            logger.warning("init_db 실패 — DB 미연결 상태로 기동 계속", exc_info=True)
     # 워커·정리 루프 모두 이벤트 루프 안 asyncio 태스크(논블로킹)
     job_queue.start()
     job_cleaner.start()
