@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.ingest import router as ingest_router
 from app.core.logging_config import setup_logging
 from app.db.session import init_db
+from app.services.delivery_reconciler import delivery_reconciler
 from app.services.job_cleanup import job_cleaner
 from app.services.job_queue import job_queue
 
@@ -23,7 +24,9 @@ async def lifespan(app: FastAPI):
     # 워커·정리 루프 모두 이벤트 루프 안 asyncio 태스크(논블로킹)
     job_queue.start()
     job_cleaner.start()
+    delivery_reconciler.start()
     yield
+    await delivery_reconciler.stop()
     await job_cleaner.stop()
     await job_queue.stop()
 

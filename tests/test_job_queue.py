@@ -107,7 +107,15 @@ async def test_worker_marks_failed_on_runner_error(factory):
     assert await _status(factory, job_id) == "FAILED"
 
 
-async def test_valid_result_is_persisted_on_done(factory):
+async def test_valid_result_is_persisted_on_done(factory, monkeypatch):
+    # DONE은 Spring 전송 성공 후 확정 — 전송을 성공으로 모킹.
+    import app.services.spring_client as spring_mod
+
+    async def _ok(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _ok)
+
     async def runner(job_id: int, bundle: IngestBundle) -> RcaResult:
         return _valid_result()
 
