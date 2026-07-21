@@ -115,45 +115,25 @@ class IngestBundle(CamelModel):
     traces: list[ModalityItem] = Field(default_factory=list)
 
 
-class LogLine(CamelModel):
-    timestamp: str | None = None
-    level: str | None = None
-    msg: str | None = None
-
-
-class TraceSpan(CamelModel):
-    traceId: str | None = None
-    from_: str | None = None  # 별칭 'from' (예약어 회피, to_camel이 생성)
-    to: str | None = None
-    duration: int | None = None
-    status: str | None = None
-
-
-class MetricItem(CamelModel):
-    label: str | None = None
-    value: str | None = None
-    threshold: str | None = None
-    exceeded: bool | None = None
+# evidence 3종은 source·conclusion만 생성한다. 화면의 개별 lines/spans/items는
+# Spring이 GET 응답 때 log/metric/trace 테이블 raw(정규화 JSON)에서 조립해 채운다
+# (docs/spring-contract.md). 그래서 AI 산출물에는 배열을 싣지 않는다.
 
 
 class LogEvidence(CamelModel):
     conclusion: str
     source: str | None = None
-    lines: list[LogLine] | None = None
 
 
 class TraceEvidence(CamelModel):
-    """[예지 확인 필요] - 이예지 담당 영역."""
     conclusion: str
     source: str | None = None
-    spans: list[TraceSpan] | None = None
-    origin_service: str | None = None
+    origin_service: str | None = None  # 진원 서비스 → 대표 service로 승격 (Q-007)
 
 
 class MetricEvidence(CamelModel):
     conclusion: str
     source: str | None = None
-    items: list[MetricItem] | None = None
 
 
 class Rca(CamelModel):
