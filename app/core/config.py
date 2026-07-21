@@ -13,6 +13,9 @@ class Settings(BaseSettings):
 
     spring_base_url: str = "http://localhost:8080"
 
+    # 로그 레벨 (DEBUG/INFO/WARNING/ERROR). 중앙 로깅 설정(core.logging_config)에서 사용.
+    log_level: str = "INFO"
+
     # RCA job 동시 처리 상한(워커 수). 수집기 폭주 시 병렬 처리량 제어.
     rca_worker_concurrency: int = 2
 
