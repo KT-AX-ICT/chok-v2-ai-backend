@@ -30,6 +30,8 @@ uv run pytest
 
 ## 배포 노트 (DB)
 
+> 상세 절차·SQL: [DB 배포 가이드](docs/db-deploy.md)
+
 Spring과 FastAPI는 **하나의 MySQL 인스턴스를 공유**하고, 그 안에서 각자 스키마만 나눠 쓴다 (Spring=`chokchok`, FastAPI=`chok_ai`). 로컬은 Spring compose를 흉내 낸 대역 컨테이너([docker-compose.yml](docker-compose.yml), 포트 3307)로 개발한다.
 
 서버 배포 시 주의:
