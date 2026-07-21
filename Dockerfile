@@ -9,9 +9,20 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+# 앱 코드 → 프로젝트 설치
 COPY app ./app
 RUN uv sync --frozen --no-dev
 
-EXPOSE 8000
+# 런타임 정적 파일(코드 아님, sync 불필요): 마이그레이션 + 부팅 스크립트
+COPY alembic.ini ./
+COPY migrations ./migrations
+COPY entrypoint.sh ./
+RUN chmod +x entrypoint.sh
 
-CMD ["uv", "run", "--no-dev", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# non-root 실행 (보안 기본). .venv 포함 /app 소유권 이전.
+RUN useradd -r -u 1001 appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+# 부팅: alembic upgrade head → uvicorn (entrypoint.sh)
+ENTRYPOINT ["./entrypoint.sh"]
