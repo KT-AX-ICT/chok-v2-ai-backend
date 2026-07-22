@@ -16,7 +16,7 @@ services:
       - "127.0.0.1:3307:3306"
     volumes:
       - db-data:/var/lib/mysql
-      # 테이블은 앱 기동 시 init_db()가 자동 생성 → 별도 schema.sql 불필요
+      # 스키마는 Alembic이 관리 — 로컬은 'uv run alembic upgrade head'(또는 DB_AUTO_CREATE=true)
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$$MYSQL_ROOT_PASSWORD"]
       interval: 5s

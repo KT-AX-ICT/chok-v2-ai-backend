@@ -140,8 +140,16 @@ async def test_agents_are_swappable():
 
 
 async def test_full_pipeline_through_queue_reaches_done(factory, monkeypatch):
-    """POST 이후 흐름: 큐 → LLM 오케스트레이터(fake) → 검증 → DONE + result 저장."""
+    """POST 이후 흐름: 큐 → LLM 오케스트레이터(fake) → 검증 → 전송 성공 → DONE."""
     monkeypatch.setattr(orchestrator_mod, "orchestrator", _fake_orchestrator())
+    # 이제 DONE은 Spring 전송 성공 후 확정 — 전송을 성공으로 모킹.
+    import app.services.spring_client as spring_mod
+
+    async def _ok(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _ok)
+
     q = RcaJobQueue(concurrency=1, session_factory=factory)  # 기본 runner = 오케스트레이터
     bundle = _bundle()
     job_id = await _seed_job(factory, bundle)
@@ -161,3 +169,27 @@ async def test_full_pipeline_through_queue_reaches_done(factory, monkeypatch):
         "impact",
         "actions",
     }
+
+
+async def test_delivery_failure_leaves_job_in_delivering(factory, monkeypatch):
+    """Spring 전송이 실패하면 DONE이 아니라 DELIVERING에 머물고 result는 저장돼 있다."""
+    monkeypatch.setattr(orchestrator_mod, "orchestrator", _fake_orchestrator())
+    import app.services.spring_client as spring_mod
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("spring down")
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _boom)
+
+    q = RcaJobQueue(concurrency=1, session_factory=factory)
+    job_id = await _seed_job(factory, _bundle())
+    q.start()
+    await q.enqueue(job_id)
+    await q.stop()
+
+    async with factory() as db:
+        job = (
+            await db.execute(select(IngestJob).where(IngestJob.job_id == job_id))
+        ).scalar_one()
+    assert job.status == "DELIVERING"  # 전송 실패 → 미확정
+    assert job.result is not None  # 결과는 저장돼 재전송 가능

@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -9,6 +11,8 @@ from app.schemas.contracts import IngestBundle
 from app.services.job_queue import job_queue
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+logger = logging.getLogger(__name__)
 
 
 class IngestResponse(BaseModel):
@@ -28,10 +32,26 @@ async def ingest_bundle(
     db: AsyncSession = Depends(get_db),
 ) -> IngestResponse:
     # 수집기에 즉시 응답하기 위해 job만 기록하고 실제 RCA는 큐 워커에 위임한다.
-    job = IngestJob(status="PENDING", bundle=bundle.model_dump())
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
+    try:
+        job = IngestJob(status="PENDING", bundle=bundle.model_dump())
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+    except Exception:
+        await db.rollback()
+        logger.exception(
+            "ingest: job 기록 실패 (트리거 %s)", bundle.trigger_info.trigger_time
+        )
+        raise HTTPException(status_code=503, detail="failed to persist job")
+
+    logger.info(
+        "ingest 수신: job %s (트리거 %s, log=%d metric=%d trace=%d)",
+        job.job_id,
+        bundle.trigger_info.trigger_time,
+        len(bundle.logs),
+        len(bundle.metrics),
+        len(bundle.traces),
+    )
 
     # 번들은 DB에 저장했으므로 큐에는 job_id만 넘긴다(워커가 DB에서 복원).
     await job_queue.enqueue(job.job_id)

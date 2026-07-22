@@ -55,7 +55,7 @@ async def test_get_job_status_after_ingest(client: AsyncClient):
     assert status_resp.status_code == 200
     body = status_resp.json()
     assert body["job_id"] == job_id
-    assert body["status"] in {"PENDING", "RUNNING", "DONE", "FAILED"}
+    assert body["status"] in {"PENDING", "RUNNING", "DELIVERING", "DONE", "FAILED"}
 
 
 async def test_get_job_status_not_found(client: AsyncClient):
@@ -83,6 +83,18 @@ async def test_ingest_invalid_timestamp_returns_422(client: AsyncClient):
     }
     resp = await client.post("/ingest", json=bad)
     assert resp.status_code == 422
+
+
+async def test_ingest_db_failure_returns_503(client: AsyncClient, monkeypatch):
+    """job 기록 중 DB 오류가 나면 raw 500이 아니라 503으로 정리해 응답한다."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    async def boom(self, *args, **kwargs):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(AsyncSession, "commit", boom)
+    resp = await client.post("/ingest", json=BUNDLE_PAYLOAD)
+    assert resp.status_code == 503
 
 
 async def test_ingest_empty_modalities_accepted(client: AsyncClient):

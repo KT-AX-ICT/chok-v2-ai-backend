@@ -19,11 +19,15 @@ Spring 계약은 **camelCase**로 통일 — 페이로드 전체를 by_alias=Tru
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from app.core.config import settings
 from app.schemas.contracts import IngestBundle, RcaResult
 from app.services.raw_normalizer import normalize_payload_signals
+
+logger = logging.getLogger(__name__)
 
 
 class SpringClient:
@@ -61,6 +65,10 @@ class SpringClient:
     async def _post(self, payload: dict) -> None:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(f"{self._base}/api/internal/reports", json=payload)
+            if resp.is_error:  # 4xx/5xx — 상태코드·본문을 남겨 원인 추적 가능하게
+                logger.warning(
+                    "Spring 응답 오류 %s: %s", resp.status_code, resp.text[:500]
+                )
             resp.raise_for_status()
 
     async def save_result(

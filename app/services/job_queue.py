@@ -9,9 +9,11 @@
 워커가 job을 조회하면서 함께 복원한다(단일 출처, 큐 경량화).
 
 역할 분리:
-  - 워커(_process): job 상태 머신 담당. PENDING → RUNNING → DONE/FAILED.
+  - 워커(_process): job 상태 머신 담당. PENDING → RUNNING → DELIVERING → DONE / FAILED.
     RCA 실패 시 오케스트레이터부터 1회 재시작하고, 검증을 통과한 산출물만
-    Spring으로 보낸다. 최종 실패 시에는 폴백으로 실패 사유+번들을 Spring에 전송.
+    Spring으로 보낸다. Spring 전송이 성공해야 DONE으로 확정하고, 실패하면
+    DELIVERING에 머물러 재전송 루프(delivery_reconciler)가 다시 민다. 최종
+    분석 실패 시에는 폴백으로 실패 사유+번들을 Spring에 전송.
   - runner: 산출물 생성만 담당(기본은 orchestrator.run). LLM 심층 구현으로
     교체할 때 이 시그니처만 맞추면 된다.
 """
@@ -133,12 +135,13 @@ class RcaJobQueue:
         raise last_exc
 
     async def _process(self, job_id: int) -> None:
-        """job 상태 머신: RUNNING → RCA(1회 재시도) → DONE/FAILED.
+        """job 상태 머신: RUNNING → RCA(1회 재시도) → DELIVERING → DONE / FAILED.
 
-        번들은 큐가 아니라 DB(job.bundle)에서 복원한다(단일 출처). DB 커밋으로
-        상태를 확정한 뒤, 세션 밖에서 Spring 전송을 시도한다(best-effort).
+        번들은 큐가 아니라 DB(job.bundle)에서 복원한다(단일 출처). 분석 결과는 먼저
+        DB에 저장(DELIVERING)하고, Spring 전송이 성공해야 DONE으로 확정한다. 전송
+        실패 시 DELIVERING에 머무르며, 재전송 루프(delivery_reconciler)가 다시 민다.
         """
-        delivery: tuple[str, object] | None = None
+        outcome: tuple[str, object] | None = None
         async with self._session_factory() as db:
             result = await db.execute(
                 select(IngestJob).where(IngestJob.job_id == job_id)
@@ -155,38 +158,62 @@ class RcaJobQueue:
             try:
                 validated = await self._run_rca(job_id, bundle)
                 if validated is not None:
+                    # result를 먼저 저장하고 DELIVERING로 — 전송은 세션 밖에서.
                     job.result = validated.model_dump(by_alias=True, exclude_none=True)
-                job.status = "DONE"
-                job.error = None
-                await db.commit()
-                if validated is not None:
-                    delivery = ("result", validated)
+                    job.status = "DELIVERING"
+                    job.error = None
+                    await db.commit()
+                    outcome = ("deliver", validated)
+                else:
+                    # 산출물 없음 — 전송할 것이 없으므로 바로 DONE.
+                    job.status = "DONE"
+                    job.error = None
+                    await db.commit()
             except Exception as exc:
                 logger.exception("job %s RCA 최종 실패(재시도 후)", job_id)
                 job.status = "FAILED"
                 job.error = str(exc)  # 사유 전체 저장(truncation 없음)
                 await db.commit()
-                delivery = ("failure", str(exc))
+                outcome = ("failure", str(exc))
 
-        # DB(SSOT) 확정 후, 세션 밖에서 Spring 전송(best-effort)
-        if delivery is None:
+        # DB 확정 후, 세션 밖에서 Spring 전송
+        if outcome is None:
             return
-        kind, payload = delivery
-        if kind == "result":
-            await self._deliver_result(job_id, bundle, payload)
+        kind, payload = outcome
+        if kind == "deliver":
+            await self._deliver_and_finalize(job_id, bundle, payload)
         else:
             await self._deliver_failure(job_id, bundle, payload)
 
-    async def _deliver_result(
+    async def _deliver_and_finalize(
         self, job_id: int, bundle: IngestBundle, result: object
     ) -> None:
-        """검증 통과분을 Spring에 전송(best-effort). 실패해도 job DONE 유지."""
+        """Spring 전송 성공 시에만 DELIVERING → DONE. 실패하면 DELIVERING 유지(재전송 대기)."""
         from app.services.spring_client import spring_client
 
         try:
             await spring_client.save_result(job_id, bundle, result)
         except Exception:
-            logger.warning("Spring 결과 전송 실패(무시): job %s", job_id)
+            logger.warning(
+                "Spring 결과 전송 실패 — DELIVERING 유지, 재전송 대기: job %s",
+                job_id,
+                exc_info=True,
+            )
+            return
+        await self._mark_done(job_id)
+
+    async def _mark_done(self, job_id: int) -> None:
+        """전송 성공한 job을 DONE으로 확정. DELIVERING인 것만 전이(중복 방지)."""
+        async with self._session_factory() as db:
+            result = await db.execute(
+                select(IngestJob).where(IngestJob.job_id == job_id)
+            )
+            job = result.scalar_one_or_none()
+            if job is None or job.status != "DELIVERING":
+                return
+            job.status = "DONE"
+            await db.commit()
+        logger.info("job %s 전송 완료 → DONE", job_id)
 
     async def _deliver_failure(
         self, job_id: int, bundle: IngestBundle, error: str
@@ -197,7 +224,7 @@ class RcaJobQueue:
         try:
             await spring_client.save_failure(job_id, bundle, error)
         except Exception:
-            logger.warning("Spring 실패 폴백 전송 실패(무시): job %s", job_id)
+            logger.warning("Spring 실패 폴백 전송 실패(무시): job %s", job_id, exc_info=True)
 
 
 # 앱 전역 큐 인스턴스. lifespan에서 start()/stop() 호출.
