@@ -31,19 +31,19 @@ Modality = Literal["log", "metric", "trace"]
 # Spring이 이 JSON을 역직렬화해 화면 lines/spans/items를 조립한다(docs/spring-contract.md).
 
 
-class NormalizedLog(BaseModel):
+class LogLine(BaseModel):
     level: str = ""
     msg: str = ""
 
 
-class NormalizedMetric(BaseModel):
+class MetricItem(BaseModel):
     label: str = ""
     value: str = ""
     threshold: str = ""
     exceeded: bool | None = None
 
 
-class NormalizedTrace(BaseModel):
+class TraceSpan(BaseModel):
     # 'from'은 파이썬 예약어라 필드는 from_, 직렬화 키는 alias 'from'.
     model_config = ConfigDict(populate_by_name=True)
 
@@ -105,7 +105,7 @@ def normalize_log(raw: str) -> str:
     if not level:  # dict든 텍스트든 레벨이 비면 메시지에서 마지막으로 시도
         m = _LEVEL_RE.search(msg)
         level = m.group(1).upper() if m else ""
-    return NormalizedLog(level=level, msg=msg).model_dump_json()
+    return LogLine(level=level, msg=msg).model_dump_json()
 
 
 # ---------------------------------------------------------------- metric
@@ -146,7 +146,7 @@ def normalize_metric(raw: str) -> str:
     d = _loads_dict(raw)
     threshold = _s(d.get("threshold")) if d else ""
     exceeded = d.get("exceeded") if d and isinstance(d.get("exceeded"), bool) else None
-    return NormalizedMetric(
+    return MetricItem(
         label=label, value=value, threshold=threshold, exceeded=exceeded
     ).model_dump_json()
 
@@ -193,7 +193,7 @@ def normalize_trace(raw: str) -> str:
             duration = int(float(m.group(1)) * _DUR_UNIT_MS[m.group(2).lower()])
         if m := _TRACE_ERR_RE.search(raw):  # 텍스트면 에러 신호를 status로
             status = m.group(1).upper()
-    return NormalizedTrace(
+    return TraceSpan(
         traceId=trace_id, from_=frm, to=to, duration=duration, status=status
     ).model_dump_json(by_alias=True)
 
