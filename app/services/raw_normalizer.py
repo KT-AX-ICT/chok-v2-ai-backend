@@ -20,7 +20,38 @@ import json
 import re
 from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+
 Modality = Literal["log", "metric", "trace"]
+
+
+# ---------------------------------------------------------------- 출력 계약 스키마
+# raw 정규화 결과의 모양을 Pydantic 모델로 못박는다. 문자열로 내보내기 전에 이 모델을
+# 거치므로(구성=검증), 키·타입이 계약과 어긋나면 런타임에 걸린다(모양 drift 차단).
+# Spring이 이 JSON을 역직렬화해 화면 lines/spans/items를 조립한다(docs/spring-contract.md).
+
+
+class NormalizedLog(BaseModel):
+    level: str = ""
+    msg: str = ""
+
+
+class NormalizedMetric(BaseModel):
+    label: str = ""
+    value: str = ""
+    threshold: str = ""
+    exceeded: bool | None = None
+
+
+class NormalizedTrace(BaseModel):
+    # 'from'은 파이썬 예약어라 필드는 from_, 직렬화 키는 alias 'from'.
+    model_config = ConfigDict(populate_by_name=True)
+
+    traceId: str = ""
+    from_: str = Field("", alias="from")
+    to: str = ""
+    duration: int | None = None
+    status: str = ""
 
 
 # ---------------------------------------------------------------- 공통 유틸
@@ -74,7 +105,7 @@ def normalize_log(raw: str) -> str:
     if not level:  # dict든 텍스트든 레벨이 비면 메시지에서 마지막으로 시도
         m = _LEVEL_RE.search(msg)
         level = m.group(1).upper() if m else ""
-    return json.dumps({"level": level, "msg": msg}, ensure_ascii=False)
+    return NormalizedLog(level=level, msg=msg).model_dump_json()
 
 
 # ---------------------------------------------------------------- metric
@@ -115,10 +146,9 @@ def normalize_metric(raw: str) -> str:
     d = _loads_dict(raw)
     threshold = _s(d.get("threshold")) if d else ""
     exceeded = d.get("exceeded") if d and isinstance(d.get("exceeded"), bool) else None
-    return json.dumps(
-        {"label": label, "value": value, "threshold": threshold, "exceeded": exceeded},
-        ensure_ascii=False,
-    )
+    return NormalizedMetric(
+        label=label, value=value, threshold=threshold, exceeded=exceeded
+    ).model_dump_json()
 
 
 # ---------------------------------------------------------------- trace
@@ -163,10 +193,9 @@ def normalize_trace(raw: str) -> str:
             duration = int(float(m.group(1)) * _DUR_UNIT_MS[m.group(2).lower()])
         if m := _TRACE_ERR_RE.search(raw):  # 텍스트면 에러 신호를 status로
             status = m.group(1).upper()
-    return json.dumps(
-        {"traceId": trace_id, "from": frm, "to": to, "duration": duration, "status": status},
-        ensure_ascii=False,
-    )
+    return NormalizedTrace(
+        traceId=trace_id, from_=frm, to=to, duration=duration, status=status
+    ).model_dump_json(by_alias=True)
 
 
 # ---------------------------------------------------------------- 적용
