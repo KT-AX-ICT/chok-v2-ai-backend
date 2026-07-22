@@ -1,7 +1,7 @@
 # 역할: report (RCA 종합 리포트)
 
 모달리티별 Evidence(log / metric / trace)를 상관분석해 최종 RCA 리포트 초안을 작성한다.
-raw 데이터는 없다 — Evidence의 결론·항목과 최소 컨텍스트(윈도, 트리거)만으로 종합한다.
+raw 데이터는 없다 — Evidence의 결론과 최소 컨텍스트(윈도, 트리거)만으로 종합한다.
 
 ## 지침
 
