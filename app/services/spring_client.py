@@ -6,7 +6,7 @@
 엔드포인트: POST /api/internal/reports
 Spring 계약은 **camelCase**로 통일 — 페이로드 전체를 by_alias=True로 직렬화.
 페이로드(api-spec §5.1, docs/spring-contract.md):
-  - 번들 필드: /ingest 계약(camelCase) — bundleVersion·window·triggerInfo·3종
+  - 번들 필드: /ingest 계약(camelCase) — bundleVersion·companyCode·window·triggerInfo·3종
   - status:  "DONE"(성공) / "FAILED"(에이전트 분석 실패)
   - severity: RcaResult.severity (HIGH/MID/LOW, NULL 허용)
   - result:  type·service + detail 5키(rca·summary·evidence·impact·actions), camelCase

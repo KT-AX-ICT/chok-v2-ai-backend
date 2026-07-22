@@ -83,3 +83,35 @@ def test_failure_payload_uses_reason_not_error():
     assert "result" not in payload
     # 실패 페이로드도 raw는 정규화됨
     assert json.loads(payload["logs"][0]["raw"])["level"] == "ERROR"
+
+
+def test_payload_carries_company_code_default():
+    """companyCode 미지정 시 기본값 SN001이 페이로드 최상위에 실린다."""
+    payload = SpringClient._result_payload(_bundle(), _result())
+    assert payload["companyCode"] == "SN001"
+
+
+def test_payload_carries_provided_company_code():
+    """지정한 companyCode는 성공·실패 페이로드 둘 다에 그대로 전달된다."""
+    bundle = IngestBundle(
+        company_code="SN042",
+        window={"start": "2026-01-15T10:00:00Z", "end": "2026-01-15T10:03:00Z"},
+        trigger_info={"trigger_time": "2026-01-15T10:01:30Z", "triggered_by": ["log"]},
+    )
+    ok = SpringClient._result_payload(bundle, _result())
+    fail = SpringClient._failure_payload(bundle, "boom")
+    assert ok["companyCode"] == "SN042"
+    assert fail["companyCode"] == "SN042"
+
+
+def test_bundle_accepts_camelcase_company_code():
+    """SDK가 보내는 camelCase(companyCode) 입력을 수용하고, by_alias로 다시 camelCase 출력."""
+    bundle = IngestBundle.model_validate(
+        {
+            "companyCode": "SN099",
+            "window": {"start": "2026-01-15T10:00:00Z", "end": "2026-01-15T10:03:00Z"},
+            "triggerInfo": {"triggerTime": "2026-01-15T10:01:30Z"},
+        }
+    )
+    assert bundle.company_code == "SN099"
+    assert bundle.model_dump(by_alias=True)["companyCode"] == "SN099"
