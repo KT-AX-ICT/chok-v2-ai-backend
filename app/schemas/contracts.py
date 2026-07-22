@@ -107,6 +107,7 @@ class ModalityInfo(CamelModel):
 class IngestBundle(CamelModel):
     """수집기 → FastAPI 번들. 에이전트 3종의 공통 입력."""
     bundle_version: str = "1.0"
+    company_code: str = "SN001"  # 기업 식별 코드 (SDK 최상위). Spring에 그대로 전달.
     window: Window
     trigger_info: TriggerInfo
     modality_info: ModalityInfo = Field(default_factory=ModalityInfo)

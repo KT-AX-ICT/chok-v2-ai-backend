@@ -4,6 +4,7 @@ Request
 ```json
 {
   "bundleVersion": "1.0",
+  "companyCode": "SN001",          // 기업 식별 코드 (SDK 최상위). result와 별개로 그대로 전달, 미전송 시 기본값 SN001
   "window": {
     "start": "2026-01-15T10:00:00Z",
     "end": "2026-01-15T10:03:00Z"
@@ -94,6 +95,7 @@ Response 201
 - 멱등키 = triggerInfo.triggerTime, UNIQUE. 같은 triggerTime 재전송은 409.
 - `result`는 Spring이 검증하지 않는 JSON 패스스루 — 내부 구조 정합성은 AI 백엔드 책임.
 - `window`는 optional(null 허용). `triggerInfo.triggerTime`은 필수(멱등키 원천).
+- `companyCode`는 기업 식별 코드 — SDK 번들 최상위로 수신, FastAPI가 그대로 전달(패스스루). 미전송 시 기본값 `SN001`.
 - 원본 3종 `raw`는 FastAPI가 모달리티별 JSON으로 정규화해 전송 — log `{level,msg}` · trace `{traceId,from,to,duration,status}` · metric `{label,value,threshold,exceeded}`.
     - 파싱 불가 필드는 키를 남기고 값만 비움(`""`). log 전체 실패 시 원문 한 줄을 `msg`에 통째로 넣음.
     - 핵심 필드(가능하면 반드시 채움): log=`msg`, trace=`status`, metric=`label`+`value`.
@@ -118,4 +120,5 @@ Response 201
 - ✅ [프롬프트] report 프롬프트가 `type`·`service`를 추론·출력 (report.md에 이미 반영, 확인 완료)
 - ✅ [프롬프트] 모달리티 프롬프트·evidence 모델 정비 — `evidence`는 `source`+`conclusion`만 (`lines`/`spans`/`items` 제거)
 - [Spring] GET 상세 응답 때 `log`/`metric`/`trace` 테이블 `raw`를 역직렬화해 `evidence.*`의 `lines`/`spans`/`items` 조립 (현재는 `counts`만 반환, 행 조회 메서드 없음)
+- [Spring] `companyCode` 저장·활용 여부 결정 — 리포트를 기업 단위로 연결할지 (현재 AI는 전달만)
 - [공유 스펙] D-021(raw 무파싱·verbatim) 갱신 — raw = 정규화 JSON·원문 미보존으로 변경
