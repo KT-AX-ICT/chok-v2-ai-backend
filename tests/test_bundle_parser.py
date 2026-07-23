@@ -98,6 +98,33 @@ def test_interval_has_no_invented_status():
     assert "ok" not in line
 
 
+def test_interval_prepends_date_when_crossing_midnight():
+    """자정을 넘어 시작·끝 날짜가 갈리면 MM-DD를 병기해 순서를 명확히 한다."""
+    line = render_interval(
+        ModalityInterval(
+            fileName="a.log",
+            start="2026-01-15T23:58:00Z",
+            end="2026-01-16T00:01:00Z",
+            status="data",
+        )
+    )
+    assert "[01-15 23:58:00 ~ 01-16 00:01:00]" in line
+
+
+def test_interval_omits_date_when_same_day():
+    """같은 날 구간은 날짜 없이 시각만 — 병기는 자정 넘김 때만."""
+    line = render_interval(
+        ModalityInterval(
+            fileName="a.log",
+            start="2026-01-15T23:00:00Z",
+            end="2026-01-15T23:30:00Z",
+            status="data",
+        )
+    )
+    assert "[23:00:00 ~ 23:30:00]" in line
+    assert "01-15" not in line
+
+
 def test_metric_agent_input_has_metrics():
     result = parse_for_metric_agent(_BUNDLE)
     assert "metrics" in result
