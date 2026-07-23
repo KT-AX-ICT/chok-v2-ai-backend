@@ -14,11 +14,19 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?fail-fast — 키 필수}
       SPRING_BASE_URL: ${SPRING_BASE_URL:-http://localhost:8080}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      BUNDLE_STORAGE_DIR: ${BUNDLE_STORAGE_DIR:-/app/data/bundles}
     ports:
       - "8000:8000"
+    volumes:
+      # 번들 원본(logs/metrics/traces) 파일. 컨테이너 파일시스템은 재생성 시 사라지므로,
+      # 처리 중이던 job의 원본이 재배포 후에도 남으려면 볼륨이 필요하다.
+      - ai-bundles:/app/data/bundles
     restart: unless-stopped
     # 공유 MySQL이 다른 compose의 컨테이너라면 그 네트워크에 붙인다:
     # networks: [shared]
+
+volumes:
+  ai-bundles:
 
 # networks:
 #   shared:

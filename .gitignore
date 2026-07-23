@@ -10,5 +10,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# 임시 파일 (PR 초안 등 — 커밋 대상 아님)
+# 임시 파일 폴더
 tmp/
+
+# 번들 원본(logs/metrics/traces) 파일 저장소 — 로컬 실행 시 생성, 배포는 볼륨 마운트
+data/

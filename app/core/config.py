@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     # RCA job 동시 처리 상한(워커 수). 수집기 폭주 시 병렬 처리량 제어.
     rca_worker_concurrency: int = 2
 
+    # --- 번들 원본 파일 저장 ---
+    # logs/metrics/traces 원본을 담는 파일의 디렉터리. 한 건이 수십 MB까지 커져 DB(JSON 컬럼)에
+    # 넣으면 max_allowed_packet을 넘기므로 파일로 뺀다(bundle_store). 컨테이너에서는 이 경로에
+    # 볼륨을 마운트해야 재시작 후에도 처리 중이던 job의 원본이 남는다.
+    bundle_storage_dir: str = "data/bundles"
+    # 고아 파일 회수 기준 나이(시간). 정상 경로는 job 종료 시 삭제이므로, 이보다 오래 남은 파일은
+    # 파일만 쓰이고 job 기록이 실패한 경우 등으로 놓친 것이다.
+    bundle_orphan_max_age_hours: float = 24.0
+
     # --- DB 커넥션 복원력 ---
     # 커넥션 재생성 주기(초). MySQL wait_timeout보다 짧게 잡아야 서버가 끊기 전에 선제 교체된다.
     # 공유 인스턴스의 wait_timeout이 이보다 짧으면 그 값 아래로 낮춰야 한다.

@@ -24,6 +24,7 @@ from sqlalchemy import select
 from app.db.models import IngestJob
 from app.db.session import AsyncSessionLocal
 from app.schemas.contracts import IngestBundle, RcaResult
+from app.services import bundle_store
 
 logger = logging.getLogger(__name__)
 
@@ -54,19 +55,24 @@ class DeliveryReconciler:
         cutoff = _utc_naive_now() - self._grace
         async with self._session_factory() as db:
             rows = await db.execute(
-                select(IngestJob.job_id, IngestJob.bundle, IngestJob.result)
+                select(
+                    IngestJob.job_id,
+                    IngestJob.bundle,
+                    IngestJob.result,
+                    IngestJob.signals_path,
+                )
                 .where(IngestJob.status == "DELIVERING")
                 .where(IngestJob.updated_at < cutoff)
             )
             pending = rows.all()
 
         delivered = 0
-        for job_id, raw_bundle, raw_result in pending:
+        for job_id, raw_bundle, raw_result, signals_path in pending:
             if raw_result is None:  # 이론상 없음(DELIVERING은 result 저장 후 진입)
                 logger.warning("job %s DELIVERING인데 result 없음 — 스킵", job_id)
                 continue
             try:
-                bundle = IngestBundle.model_validate(raw_bundle)
+                bundle = await self._restore(job_id, raw_bundle, signals_path)
                 result = RcaResult.model_validate(raw_result)
                 await spring_client.save_result(job_id, bundle, result)
             except Exception:
@@ -74,7 +80,22 @@ class DeliveryReconciler:
                 continue
             if await self._mark_done(job_id):
                 delivered += 1
+                await bundle_store.discard(signals_path)  # 전송 확정 후 원본 회수
         return delivered
+
+    async def _restore(
+        self, job_id: int, stored: dict, signals_path: str | None
+    ) -> IngestBundle:
+        """번들 복원. 원본 파일이 사라졌으면 3종 배열 없이라도 보낸다.
+
+        리포트의 핵심은 분석 결과(result)이므로, 원본 행을 못 싣는다고 전송을 포기해
+        리포트를 통째로 잃는 것보다 결과만이라도 전달하는 편이 낫다.
+        """
+        try:
+            return await bundle_store.restore_bundle(stored, signals_path)
+        except bundle_store.SignalsMissing:
+            logger.warning("job %s 원본 파일 없음 — 3종 배열 없이 결과만 재전송", job_id)
+            return IngestBundle.model_validate(stored)
 
     async def _mark_done(self, job_id: int) -> bool:
         """전송 성공한 job을 DONE으로. DELIVERING인 것만 전이(워커와 중복 방지)."""
