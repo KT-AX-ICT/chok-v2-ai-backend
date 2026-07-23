@@ -80,6 +80,8 @@ def test_interval_renders_both_counts():
         )
     )
     assert "1523/20000건" in line
+    assert "[10:00:00 ~ 10:03:00]" in line  # 날짜부 생략, 시각만 (압축 로그와 형식 일치)
+    assert "2026-01-15" not in line  # 날짜는 상단 윈도/트리거에만
     assert "UserService" not in line  # 파일명 없으면 빈 자리도 안 남김
 
 

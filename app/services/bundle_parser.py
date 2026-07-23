@@ -14,6 +14,7 @@ from app.services.bundle_compression import (
     compress_logs,
     compress_metrics,
     compress_traces,
+    short_ts,
 )
 
 
@@ -23,8 +24,12 @@ def render_interval(iv: ModalityInterval) -> str:
     fileName을 싣는다 — 파일이 특정되지 않으면 status=missing이 "어딘가의 무언가가
     없었다"가 되어 진원 국소화에 못 쓴다(모듈 독스트링의 D-020 갱신 참조).
     값이 없는 필드는 줄에서 뺀다 — 항목마다 반복되므로 토큰이 항목 수만큼 곱해진다.
+    시각은 short_ts로 축약 — 날짜·기준시각은 상단 윈도/트리거에 전체 형식으로 한 번만
+    싣고, 구간·압축 데이터는 시각(HH:MM:SS)만 남겨 압축 로그 표기와 형식을 맞춘다.
     """
-    time_range = f"{iv.start} ~ {iv.end}" if iv.start and iv.end else "시간 미상"
+    time_range = (
+        f"{short_ts(iv.start)} ~ {short_ts(iv.end)}" if iv.start and iv.end else "시간 미상"
+    )
     parts = [f"[{time_range}]"]
     if iv.fileName:
         parts.append(iv.fileName)
