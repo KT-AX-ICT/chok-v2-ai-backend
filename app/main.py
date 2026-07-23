@@ -11,6 +11,7 @@ from app.db.session import init_db
 from app.services.delivery_reconciler import delivery_reconciler
 from app.services.job_cleanup import job_cleaner
 from app.services.job_queue import job_queue
+from app.services.stuck_job_reaper import stuck_job_reaper
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,17 @@ async def lifespan(app: FastAPI):
             logger.warning("init_db 실패 — DB 미연결 상태로 기동 계속", exc_info=True)
     # 워커·정리 루프 모두 이벤트 루프 안 asyncio 태스크(논블로킹)
     job_queue.start()
+    # 큐가 메모리(asyncio.Queue)라 재시작하면 적재분이 사라진다 — DB에 남은 미완 job을
+    # 다시 태운다. DB는 소프트(미연결이어도 기동 계속)이므로 실패해도 사유만 남기고 진행.
+    try:
+        await stuck_job_reaper.recover_on_startup()
+    except Exception:
+        logger.warning("기동 복구 실패 — DB 미연결일 수 있음", exc_info=True)
     job_cleaner.start()
     delivery_reconciler.start()
+    stuck_job_reaper.start()
     yield
+    await stuck_job_reaper.stop()
     await delivery_reconciler.stop()
     await job_cleaner.stop()
     await job_queue.stop()

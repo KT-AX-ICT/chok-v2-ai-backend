@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,8 +29,13 @@ class JobStatusResponse(BaseModel):
 @router.post("", response_model=IngestResponse, status_code=201)
 async def ingest_bundle(
     bundle: IngestBundle,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> IngestResponse:
+    # 본문 바이트 크기. 대용량 요청이 저장 실패의 원인인지(MySQL max_allowed_packet 초과 등)
+    # 사후 판별하려면 항목 개수만으로는 부족하다. 재직렬화 비용 없이 헤더 값을 그대로 쓴다.
+    body_bytes = request.headers.get("content-length", "?")
+
     # 수집기에 즉시 응답하기 위해 job만 기록하고 실제 RCA는 큐 워커에 위임한다.
     try:
         job = IngestJob(status="PENDING", bundle=bundle.model_dump())
@@ -40,14 +45,20 @@ async def ingest_bundle(
     except Exception:
         await db.rollback()
         logger.exception(
-            "ingest: job 기록 실패 (트리거 %s)", bundle.trigger_info.trigger_time
+            "ingest: job 기록 실패 (트리거 %s, 본문 %s bytes, log=%d metric=%d trace=%d)",
+            bundle.trigger_info.trigger_time,
+            body_bytes,
+            len(bundle.logs),
+            len(bundle.metrics),
+            len(bundle.traces),
         )
         raise HTTPException(status_code=503, detail="failed to persist job")
 
     logger.info(
-        "ingest 수신: job %s (트리거 %s, log=%d metric=%d trace=%d)",
+        "ingest 수신: job %s (트리거 %s, 본문 %s bytes, log=%d metric=%d trace=%d)",
         job.job_id,
         bundle.trigger_info.trigger_time,
+        body_bytes,
         len(bundle.logs),
         len(bundle.metrics),
         len(bundle.traces),
