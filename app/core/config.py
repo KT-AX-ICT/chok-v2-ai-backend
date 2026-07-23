@@ -23,6 +23,27 @@ class Settings(BaseSettings):
     # RCA job 동시 처리 상한(워커 수). 수집기 폭주 시 병렬 처리량 제어.
     rca_worker_concurrency: int = 2
 
+    # --- DB 커넥션 복원력 ---
+    # 커넥션 재생성 주기(초). MySQL wait_timeout보다 짧게 잡아야 서버가 끊기 전에 선제 교체된다.
+    # 공유 인스턴스의 wait_timeout이 이보다 짧으면 그 값 아래로 낮춰야 한다.
+    db_pool_recycle_seconds: int = 3600
+    # 커넥션 수립 타임아웃(초). 타임아웃이 없으면 커넥션이 죽어도 예외 없이 무한 대기하고,
+    # 그러면 ingest가 503조차 못 내려 SDK가 계속 기다린다.
+    db_connect_timeout_seconds: int = 10
+
+    # --- 중단 job 회수 ---
+    # RUNNING이 이 시간을 넘기면 중단으로 간주(초).
+    # 값 선정 — 임계가 짧으면 정상 처리 중인 job을 중단으로 오인해 회수하고(RUNNING 전이 후에는
+    # 행을 갱신하지 않아 updated_at만으로 진행 여부를 구분할 수 없다), 길면 진짜 멈춘 job의 발견이
+    # 늦어진다. 늦은 발견은 지연에 그치지만 오인 회수는 끝나가던 분석을 버리므로 긴 쪽을 택했다.
+    # 30분은 계산된 상한이 아니라 보수적 운영값이다 — LLM 호출에 요청 타임아웃이 없어
+    # (agents/llm.py의 make_llm) 최악 소요를 코드로 한정할 수 없기 때문. LLM 요청 타임아웃을
+    # 두거나 실제 RCA 소요 분포를 측정하면 그 값에서 역산해 줄일 수 있다.
+    stuck_job_after_seconds: int = 1800
+    stuck_job_interval_seconds: int = 300
+    # 중단 job의 큐 재투입 허용 횟수. 넘기면 FAILED로 확정한다(무한 재투입·크래시 루프 방지).
+    max_job_requeue: int = 1
+
     # --- LLM (OpenAI) ---
     # 빈 값이면 LLM 미기동(테스트·로컬 무키 환경). 모델 ID는 스냅샷 고정 — 교체는 env 한 줄.
     openai_api_key: str = ""
