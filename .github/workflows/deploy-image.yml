@@ -1,0 +1,20 @@
+# 이미지 빌드 → GHCR push → chok-v2-deploy에 digest 자동 PR
+# 테스트는 tests.yml이 담당. 여기선 빌드·배포PR만.
+name: deploy-image
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    permissions:
+      contents: read
+      packages: write
+    uses: KT-AX-ICT/chok-v2-deploy/.github/workflows/reusable-docker-build.yml@main
+    with:
+      image_name: chok-v2-ai-backend
+      service_key: fastapi
+    secrets:
+      DEPLOY_BOT_APP_ID: ${{ secrets.DEPLOY_BOT_APP_ID }}
+      DEPLOY_BOT_PRIVATE_KEY: ${{ secrets.DEPLOY_BOT_PRIVATE_KEY }}
