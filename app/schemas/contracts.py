@@ -22,7 +22,10 @@ CHOK Phase 2 - 에이전트 I/O 계약 (초안 v0.1, 2026-07-13).
 - detail 5키(rca, summary, evidence, impact, actions) 이름/존재는 고정. 프론트가 키로 화면을 그림.
 - 필수 최소선만 required. optional 필드는 못 채우면 None -> 직렬화 시 키 생략(null 금지).
 - type, severity, service = LLM 판정 (트리거 아님). service는 evidence origin에서 채움(Q-007).
-- LLM 입력 정제: title, bundle_id, 파일명은 프롬프트에서 제외 (정답 유출 방지).
+- LLM 입력 정제: title, bundle_id는 프롬프트에서 제외 (정답 유출 방지).
+  단 modality_info의 파일명은 포함한다 — 어느 파일의 어느 구간이 비었는지 특정되지
+  않으면 진원 국소화가 불가능하고, 서비스명은 압축 로그에서 이미 노출되어 차폐
+  효과가 제한적이다.
 """
 
 from __future__ import annotations
@@ -85,12 +88,17 @@ class TriggerInfo(CamelModel):
 
 
 class ModalityInterval(CamelModel):
-    """모달리티별 파일 구간 메타데이터."""
+    """항목 하나 = (파일, 시간 구간) 한 쌍. 같은 파일이 구간별로 여러 항목이 될 수 있다.
+
+    status 3값(SDK 정의): data(레코드 있음) / empty(소스는 있으나 이 구간엔 없음) /
+    missing(파일 자체가 없음). 예상 밖 값이 와도 번들을 거부하지 않도록 str로 둔다.
+    """
     fileName: str = ""
     start: Iso8601 | None = None
     end: Iso8601 | None = None
     status: str | None = None
-    present: str | None = None
+    record_count: int | None = None  # 번들에 실제 담긴 건수(SDK가 거른 뒤)
+    total_count: int | None = None  # 이 구간에 원래 존재했던 건수
 
 
 class ModalityDetail(CamelModel):
