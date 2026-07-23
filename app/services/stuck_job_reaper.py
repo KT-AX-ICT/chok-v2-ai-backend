@@ -33,6 +33,7 @@ from app.core.config import settings
 from app.db.models import IngestJob
 from app.db.session import AsyncSessionLocal
 from app.schemas.contracts import IngestBundle
+from app.services import bundle_store
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,8 @@ class StuckJobReaper:
         DB를 먼저 확정한 뒤, 세션 밖에서 큐 적재·Spring 전송을 한다(세션 점유 최소화).
         """
         to_enqueue: list[int] = []
-        to_fail: list[tuple[int, IngestBundle]] = []
+        # (job_id, 경량 번들, 원본 파일 이름) — 번들 복원은 세션 밖에서(파일 I/O)
+        to_fail: list[tuple[int, dict, str | None]] = []
 
         async with self._session_factory() as db:
             stmt = select(IngestJob).where(IngestJob.status == "RUNNING")
@@ -151,9 +153,7 @@ class StuckJobReaper:
                 else:
                     job.status = "FAILED"
                     job.error = STUCK_REASON
-                    to_fail.append(
-                        (job.job_id, IngestBundle.model_validate(job.bundle))
-                    )
+                    to_fail.append((job.job_id, job.bundle, job.signals_path))
                     logger.error(
                         "job %s 중단 회수 — 재투입 %d회 소진, FAILED 확정",
                         job.job_id,
@@ -164,21 +164,34 @@ class StuckJobReaper:
 
         queue = self._get_queue()
         for job_id in to_enqueue:
+            # 재투입한 job은 다시 처리되므로 원본 파일을 남겨둔다.
             await queue.enqueue(job_id)
-        for job_id, bundle in to_fail:
-            await self._notify_failure(job_id, bundle)
+        for job_id, stored, signals_path in to_fail:
+            await self._notify_failure(job_id, stored, signals_path)
+            await bundle_store.discard(signals_path)  # 실패 확정 — 원본 회수
         return len(to_enqueue), len(to_fail)
 
-    async def _notify_failure(self, job_id: int, bundle: IngestBundle) -> None:
+    async def _notify_failure(
+        self, job_id: int, stored: dict, signals_path: str | None
+    ) -> None:
         """실패 확정을 Spring에 알린다(best-effort). 못 보내도 job은 FAILED로 남는다."""
         from app.services.spring_client import spring_client
 
         try:
+            bundle = await self._restore(stored, signals_path)
             await spring_client.save_failure(job_id, bundle, STUCK_REASON)
         except Exception:
             logger.warning(
                 "중단 job %s 실패 폴백 전송 실패(무시)", job_id, exc_info=True
             )
+
+    @staticmethod
+    async def _restore(stored: dict, signals_path: str | None) -> IngestBundle:
+        """번들 복원. 원본 파일이 없어도 사유는 전달해야 하므로 경량 번들로 폴백."""
+        try:
+            return await bundle_store.restore_bundle(stored, signals_path)
+        except bundle_store.SignalsMissing:
+            return IngestBundle.model_validate(stored)
 
     # ---------------------------------------------------------------- 루프
 

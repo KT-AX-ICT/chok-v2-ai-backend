@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import IngestJob
 from app.db.session import get_db
 from app.schemas.contracts import IngestBundle
+from app.services import bundle_store
 from app.services.job_queue import job_queue
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -37,13 +38,18 @@ async def ingest_bundle(
     body_bytes = request.headers.get("content-length", "?")
 
     # 수집기에 즉시 응답하기 위해 job만 기록하고 실제 RCA는 큐 워커에 위임한다.
+    # 무거운 3종 원본(logs/metrics/traces)은 파일로 빼고 DB에는 경량 번들 + 파일 이름만 남긴다
+    # (bundle_store). 파일을 먼저 쓰므로, job 기록이 실패하면 방금 쓴 파일을 되돌려 고아를 막는다.
+    signals_path: str | None = None
     try:
-        job = IngestJob(status="PENDING", bundle=bundle.model_dump())
+        light, signals_path = await bundle_store.split_and_save(bundle.model_dump())
+        job = IngestJob(status="PENDING", bundle=light, signals_path=signals_path)
         db.add(job)
         await db.commit()
         await db.refresh(job)
     except Exception:
         await db.rollback()
+        await bundle_store.discard(signals_path)
         logger.exception(
             "ingest: job 기록 실패 (트리거 %s, 본문 %s bytes, log=%d metric=%d trace=%d)",
             bundle.trigger_info.trigger_time,

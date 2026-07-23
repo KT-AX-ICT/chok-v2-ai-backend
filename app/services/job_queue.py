@@ -30,6 +30,7 @@ from app.core.config import settings
 from app.db.models import IngestJob
 from app.db.session import AsyncSessionLocal
 from app.schemas.contracts import IngestBundle, RcaResult
+from app.services import bundle_store
 from app.services.rca_validation import validate_rca_result
 
 logger = logging.getLogger(__name__)
@@ -151,7 +152,23 @@ class RcaJobQueue:
                 logger.warning("job %s 없음 — 스킵", job_id)
                 return
 
-            bundle = IngestBundle.model_validate(job.bundle)
+            signals_path = job.signals_path
+            stored = job.bundle
+            try:
+                bundle = await bundle_store.restore_bundle(stored, signals_path)
+            except bundle_store.SignalsMissing as exc:
+                # 원본 파일이 사라지면 분석이 불가능하다. 조용히 두지 않고 FAILED로 확정한 뒤
+                # 사유를 Spring에 알린다(3종 배열 없이 경량 번들로).
+                logger.error("job %s 원본 파일 없음 — FAILED 확정: %s", job_id, exc)
+                job.status = "FAILED"
+                job.error = str(exc)
+                await db.commit()
+                await self._deliver_failure(
+                    job_id, IngestBundle.model_validate(stored), str(exc)
+                )
+                await bundle_store.discard(signals_path)
+                return
+
             job.status = "RUNNING"
             await db.commit()
 
@@ -176,19 +193,27 @@ class RcaJobQueue:
                 await db.commit()
                 outcome = ("failure", str(exc))
 
-        # DB 확정 후, 세션 밖에서 Spring 전송
-        if outcome is None:
+        # DB 확정 후, 세션 밖에서 Spring 전송.
+        # 원본 파일은 전송까지 끝나야 버릴 수 있다 — Spring 페이로드에 3종 배열이 실리고,
+        # 전송 실패로 DELIVERING에 남으면 재전송 루프가 같은 파일을 다시 쓴다.
+        if outcome is None:  # 산출물 없이 DONE — 더 이상 원본이 필요 없음
+            await bundle_store.discard(signals_path)
             return
         kind, payload = outcome
         if kind == "deliver":
-            await self._deliver_and_finalize(job_id, bundle, payload)
+            if await self._deliver_and_finalize(job_id, bundle, payload):
+                await bundle_store.discard(signals_path)
         else:
             await self._deliver_failure(job_id, bundle, payload)
+            await bundle_store.discard(signals_path)
 
     async def _deliver_and_finalize(
         self, job_id: int, bundle: IngestBundle, result: object
-    ) -> None:
-        """Spring 전송 성공 시에만 DELIVERING → DONE. 실패하면 DELIVERING 유지(재전송 대기)."""
+    ) -> bool:
+        """Spring 전송 성공 시에만 DELIVERING → DONE. 실패하면 DELIVERING 유지(재전송 대기).
+
+        전송 성공 여부를 반환한다 — 호출부가 원본 파일을 버려도 되는지 판단하는 근거.
+        """
         from app.services.spring_client import spring_client
 
         try:
@@ -199,8 +224,9 @@ class RcaJobQueue:
                 job_id,
                 exc_info=True,
             )
-            return
+            return False
         await self._mark_done(job_id)
+        return True
 
     async def _mark_done(self, job_id: int) -> None:
         """전송 성공한 job을 DONE으로 확정. DELIVERING인 것만 전이(중복 방지)."""

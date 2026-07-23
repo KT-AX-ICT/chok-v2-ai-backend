@@ -27,6 +27,15 @@ def _dummy_openai_key(monkeypatch):
         monkeypatch.setattr(settings, "openai_api_key", "sk-test")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_bundle_storage(tmp_path, monkeypatch):
+    """번들 원본 파일 저장 경로를 테스트마다 임시 디렉터리로 격리.
+
+    격리하지 않으면 ingest 테스트가 실제 저장 디렉터리(data/bundles)에 파일을 남긴다.
+    """
+    monkeypatch.setattr(settings, "bundle_storage_dir", str(tmp_path / "bundles"))
+
+
 @pytest.fixture()
 async def db_engine():
     engine = create_async_engine(TEST_DB_URL, echo=False)

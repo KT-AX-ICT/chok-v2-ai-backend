@@ -102,6 +102,66 @@ async def test_reconciler_keeps_delivering_on_failure(factory, monkeypatch):
     assert job.status == "DELIVERING"  # 재전송 실패 → 유지
 
 
+async def test_signals_file_discarded_after_redelivery(factory, monkeypatch):
+    """재전송으로 DONE이 확정되면 원본 파일을 회수한다."""
+    import app.services.spring_client as spring_mod
+
+    from app.services import bundle_store
+
+    async def _ok(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _ok)
+
+    light, name = await bundle_store.split_and_save(dict(_BUNDLE))
+    async with factory() as db:
+        job = IngestJob(
+            status="DELIVERING", bundle=light, result=_RESULT, signals_path=name
+        )
+        db.add(job)
+        await db.commit()
+
+    rec = DeliveryReconciler(grace_seconds=-100, session_factory=factory)
+
+    assert await rec.redeliver_once() == 1
+    assert not (bundle_store.storage_dir() / name).exists()
+
+
+async def test_redelivers_result_even_when_signals_file_missing(factory, monkeypatch):
+    """원본 파일이 사라져도 결과는 전달 — 원본 행을 못 싣는다고 리포트를 통째로 잃지 않는다."""
+    import app.services.spring_client as spring_mod
+
+    sent: list[int] = []
+
+    async def _capture(job_id, bundle, result):
+        sent.append(job_id)
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _capture)
+
+    light = {k: v for k, v in _BUNDLE.items() if k not in ("logs", "metrics", "traces")}
+    async with factory() as db:
+        job = IngestJob(
+            status="DELIVERING",
+            bundle=light,
+            result=_RESULT,
+            signals_path="없는파일.json",
+        )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.job_id
+
+    rec = DeliveryReconciler(grace_seconds=-100, session_factory=factory)
+
+    assert await rec.redeliver_once() == 1
+    assert sent == [job_id]
+    async with factory() as db:
+        job = (
+            await db.execute(select(IngestJob).where(IngestJob.job_id == job_id))
+        ).scalar_one()
+    assert job.status == "DONE"
+
+
 async def test_reconciler_respects_grace_period(factory, monkeypatch):
     """grace가 크면(방금 만든 job) 워커 전송과 경합 방지 위해 아직 집지 않는다."""
     import app.services.spring_client as spring_mod

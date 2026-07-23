@@ -71,6 +71,33 @@ async def test_purges_only_old_terminal_jobs(factory):
     assert old_failed not in await _remaining_ids(factory)
 
 
+async def test_files_in_use_lists_only_unfinished_jobs(factory):
+    """파일 정리에서 제외할 목록 — 아직 안 끝난 job의 원본만 담긴다.
+
+    끝난 job의 파일은 종료 시점에 지워졌어야 하므로, 남아 있다면 정리 대상이 맞다.
+    """
+    now = _utc_naive_now()
+    async with factory() as db:
+        for status, name in (
+            ("PENDING", "a.json"),
+            ("RUNNING", "b.json"),
+            ("DELIVERING", "c.json"),
+            ("DONE", "d.json"),
+            ("FAILED", "e.json"),
+            ("RUNNING", None),  # 파일 없는 job은 목록에 안 들어감
+        ):
+            db.add(
+                IngestJob(
+                    status=status, bundle={}, updated_at=now, signals_path=name
+                )
+            )
+        await db.commit()
+
+    cleaner = JobCleaner(session_factory=factory)
+
+    assert await cleaner.files_in_use() == {"a.json", "b.json", "c.json"}
+
+
 async def test_purge_returns_zero_when_nothing_expired(factory):
     now = _utc_naive_now()
     await _seed(factory, "DONE", now - timedelta(hours=1))
