@@ -15,3 +15,7 @@ tmp/
 
 # 번들 원본(logs/metrics/traces) 파일 저장소 — 로컬 실행 시 생성, 배포는 볼륨 마운트
 data/
+
+# 에이전트 작업 산출물 (로컬 워크플로우 아티팩트 — 리포에 넣지 않음)
+.playwright-mcp/
+docs/superpowers/
