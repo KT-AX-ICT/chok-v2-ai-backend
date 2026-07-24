@@ -22,6 +22,12 @@ services:
       # 처리 중이던 job의 원본이 재배포 후에도 남으려면 볼륨이 필요하다.
       - ai-bundles:/app/data/bundles
     restart: unless-stopped
+    # 앱 텍스트 로그 상한 30MB(10m×3) — 번들 원본은 파일/DB 밖 저장이라 무관.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # 공유 MySQL이 다른 compose의 컨테이너라면 그 네트워크에 붙인다:
     # networks: [shared]
 

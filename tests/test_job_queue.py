@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.config import settings
 from app.db.models import IngestJob
 from app.db.session import Base
 from app.schemas.contracts import (
@@ -317,6 +318,16 @@ async def test_409_delivery_treated_as_success(factory, monkeypatch):
 
     async def runner(job_id: int, bundle: IngestBundle) -> RcaResult:
         return _valid_result()
+async def test_run_rca_cap_timeout_is_treated_as_failed_attempt(factory, monkeypatch):
+    """runner가 전체 캡(rca_overall_timeout_seconds)보다 오래 걸리면 시도 실패로 흡수되고,
+    2회 모두 타임아웃이면 job은 FAILED로 확정된다."""
+    monkeypatch.setattr(settings, "rca_overall_timeout_seconds", 0.05)
+    attempts = 0
+
+    async def runner(job_id: int, bundle: IngestBundle) -> None:
+        nonlocal attempts
+        attempts += 1
+        await asyncio.sleep(1)  # 캡(0.05s)보다 오래 걸림
 
     q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
     q.start()
@@ -324,6 +335,27 @@ async def test_409_delivery_treated_as_success(factory, monkeypatch):
     await q.enqueue(job_id)
     await q.stop()
 
+    assert attempts == 2  # 재시도 1회 포함 총 2회 시도
+    assert await _status(factory, job_id) == "FAILED"
+
+
+async def test_run_rca_within_cap_returns_normally(factory, monkeypatch):
+    """캡 이하로 끝나면 정상적으로 결과가 반환되고 재시도 없이 DONE까지 간다."""
+    monkeypatch.setattr(settings, "rca_overall_timeout_seconds", 5)
+    attempts = 0
+
+    async def runner(job_id: int, bundle: IngestBundle) -> None:
+        nonlocal attempts
+        attempts += 1
+        await asyncio.sleep(0.01)
+
+    q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
+    q.start()
+    job_id = await _seed_job(factory)
+    await q.enqueue(job_id)
+    await q.stop()
+
+    assert attempts == 1  # 재시도 없이 1회로 성공
     assert await _status(factory, job_id) == "DONE"
 
 
