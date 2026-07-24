@@ -1,0 +1,111 @@
+{
+  "job_id": 5,
+  "experiment_tag": "baseline-injection-v2-sort",
+  "git_branch": "experiment/baseline-injection",
+  "git_commit": "15bb2f5",
+  "prompt_versions": {
+    "router": null,
+    "scan": null,
+    "log": "version: log/v3-sort-by-anomaly (2026-07-24, experiment/baseline-injection)",
+    "metric": null,
+    "trace": null,
+    "report": null
+  },
+  "started_at": "2026-07-24T08:35:00.140545+00:00",
+  "elapsed_seconds": 76.9,
+  "result": {
+    "type": "Service_Discovery",
+    "severity": "HIGH",
+    "service": "composepost",
+    "detail": {
+      "rca": {
+        "rootCause": "가장 유력한 근본 원인은 composepost가 게시 작성 중 `media-service-client`로 `media-service:9090`을 호출하는 과정에서 호스트 해석 또는 서비스 디스커버리 연결에 실패한 것입니다. 로그 원문에 `getaddrinfo() <Host: media-service Port: 9090>Name or service not known`, `Failed to connect media-service-client`, `Could not resolve host for client socket`가 반복되어 이 경로가 직접적인 실패 지점으로 보입니다. 다만 trace에서 관측된 composepost 하위 호출 일부는 무에러·저지연이고 media trace는 `status=empty 0/0건`, user/socialgraph 로그도 일부만 수집된 상태이므로, media-service 자체 장애인지, DNS/서비스 등록 문제인지, composepost 설정 문제인지는 현재 Evidence만으로 확정할 수 없습니다.",
+        "propagation": "`media-service:9090` 호스트 해석/연결 실패 → composepost의 `media-service-client` 호출 실패 및 ERROR → nginx의 `compose_post_client` 대기 증가(26.882s~64.485s)와 nginx ERROR → `/wrk2-api/post/compose` HTTP 500 → 게시 작성 요청 실패",
+        "confidence": 74
+      },
+      "summary": {
+        "highlight": "2026-07-23T05:50:49.440954부터 composepost/nginx의 게시 작성 경로에서 `media-service:9090` 이름 해석/연결 실패가 반복되어 `/wrk2-api/post/compose`가 500과 장시간 지연으로 실패한 것으로 보입니다.",
+        "chips": [
+          "Service_Discovery",
+          "composepost",
+          "media-service",
+          "nginx",
+          "partial-observation"
+        ],
+        "errorTags": [
+          "getaddrinfo Name or service not known",
+          "Failed to connect media-service-client",
+          "HTTP 500",
+          "compose_post_client latency"
+        ],
+        "neutralTags": [
+          "metric은 트래픽/자원 변화 정황만 제공",
+          "media trace empty",
+          "user/socialgraph 로그 일부 수집"
+        ]
+      },
+      "evidence": {
+        "log": {
+          "conclusion": "로그상 가장 강한 이상징후는 composepost/nginx 경로의 실패입니다. 2026-07-23T05:50:49.440954부터 2026-07-23T05:54:14.246919까지 composepost ERROR가 39회 발생했고, 같은 구간에 nginx ERROR 39회가 함께 보이며 원문에는 \"Could not resolve host for client socket\" 및 \"Failed to connect media-service-client\" / \"getaddrinfo() <Host: media-service Port: 9090>Name or service not known\"가 반복됩니다. 이는 media-service 호스트 해석/연결 실패로 인해 게시 작성 요청이 처리되지 못한 정황으로 보입니다. 다만 user(5040/152579), socialgraph(5001/152577)는 수집이 일부만 된 상태이므로, 이 결론은 부분 관측 기반이며 확신도를 다소 낮춰야 합니다.",
+          "source": "log"
+        },
+        "trace": {
+          "conclusion": "nginx의 `/wrk2-api/post/compose`에서 500이 발생했고, 같은 구간에서 `nginx.compose_post_client` 지연이 26.882s~64.485s로 비정상적으로 길었습니다. 반면 `composepost`의 서버/하위 호출(`compose_text_client`, `compose_creator_client`, `compose_unique_id_client`, `compose_media_client`)은 모두 수 ms~수십 ms 수준이고 에러가 없어, 현재 본문만으로는 하류(`text`/`usermention`/`urlshorten`/`uniqueid`)보다는 `nginx → composepost` 경로 또는 수집되지 않은 `media` 쪽에 문제가 있었을 가능성이 큽니다. 다만 `media status=empty 0/0건`이라 `media`는 일부만 본 상태의 결론입니다.",
+          "source": "nginx `/wrk2-api/post/compose`는 14건 모두 500, `compose_post_client`는 26.882s~64.485s로 지연 급증. `composepost` 및 하위 `text`/`usermention`/`urlshorten`/`uniqueid`는 모두 무에러·저지연."
+        },
+        "metric": {
+          "conclusion": "이상 징후 발견 — 트리거 이후(incident) 다수 지표에서 네트워크 수신/송신 트래픽 및 일부 컨테이너 CPU·메모리 사용량이 baseline 대비 증가하며 피크가 관측됨. 예: system_network_receive_bytes(05:51:53.440954 onset, 05:53:53.440954 peak), system_network_transmit_bytes(05:51:54.440954 onset, 05:54:09.440954 peak), __node__ system_cpu_usage(incid mean 3.4, baseline mean 29.31로 ‘급락’ 구간 포함), nginx container_cpu(incid mean 0.06693), usermention container_network_receive(05:51:29.440954 onset, 05:54:14.440954 peak).",
+          "source": "metric 데이터(윈도 2026-07-23T05:48:15.451141 ~ 2026-07-23T05:54:15.451141) 중 series 통계 요약"
+        }
+      },
+      "impact": {
+        "affected": [
+          {
+            "service": "composepost",
+            "errors": 39,
+            "type": "media-service-client 연결/호스트 해석 실패"
+          },
+          {
+            "service": "nginx",
+            "errors": 39,
+            "type": "`/wrk2-api/post/compose` 500 및 upstream 대기"
+          },
+          {
+            "service": "media-service",
+            "type": "호스트 해석 대상 서비스, 직접 로그/trace는 미확인"
+          }
+        ],
+        "metrics": [
+          {
+            "label": "로그 오류 구간",
+            "value": "composepost ERROR 39회 및 nginx ERROR 39회, 2026-07-23T05:50:49.440954 ~ 2026-07-23T05:54:14.246919"
+          },
+          {
+            "label": "trace HTTP 실패",
+            "value": "nginx `/wrk2-api/post/compose` 14건 모두 500"
+          },
+          {
+            "label": "trace 지연",
+            "value": "`nginx.compose_post_client` 26.882s~64.485s"
+          },
+          {
+            "label": "metric 변화",
+            "value": "트리거 이후 system_network_receive_bytes 2026-07-23T05:51:53.440954 onset/2026-07-23T05:53:53.440954 peak, system_network_transmit_bytes 2026-07-23T05:51:54.440954 onset/2026-07-23T05:54:09.440954 peak"
+          }
+        ]
+      },
+      "actions": {
+        "steps": [
+          "composepost 및 nginx 실행 환경에서 `media-service:9090`이 해석되는지 확인한다. 예: 컨테이너/호스트 내부에서 `getent hosts media-service`, `nslookup media-service`, `nc -vz media-service 9090` 등으로 DNS와 포트 연결을 분리 확인한다.",
+          "media-service 프로세스/컨테이너/서비스 엔드포인트가 존재하고 9090 포트에서 listen 중인지 확인한다. 엔드포인트가 없거나 unhealthy이면 media-service를 재기동하거나 서비스 등록을 복구한다.",
+          "composepost의 media-service-client 설정값, 환경변수, 서비스 디스커버리 설정이 최근 변경되었는지 확인하고, `media-service` 호스트명 또는 포트가 잘못 배포되었으면 정상 설정으로 롤백한다.",
+          "DNS/서비스 디스커버리 계층의 캐시 또는 등록 불일치가 확인되면 해당 resolver/sidecar/서비스 등록 정보를 갱신하고, composepost가 오래된 해석 결과를 잡고 있으면 composepost 인스턴스를 순차 재시작한다.",
+          "복구 후 `2026-07-23T05:50:49.440954`~`2026-07-23T05:54:14.246919`에 반복된 `Could not resolve host for client socket`, `Failed to connect media-service-client`, `getaddrinfo() <Host: media-service Port: 9090>Name or service not known`가 재발하지 않는지 로그를 확인한다.",
+          "동시에 nginx trace에서 `/wrk2-api/post/compose`가 500이 아닌 정상 응답으로 돌아오고 `nginx.compose_post_client` 지연이 26.882s~64.485s 수준에서 정상 범위로 내려가는지 확인한다.",
+          "trace에서 media는 `status=empty 0/0건`, user/socialgraph 로그도 일부만 수집된 상태이므로, 복구 검증 시 media-service 로그/trace와 user, socialgraph 원본 로그를 추가 수집해 누락된 실패가 없는지 확인한다."
+        ],
+        "recovery": "`media-service:9090`의 이름 해석/서비스 등록 또는 composepost의 media-service-client 설정을 복구한 뒤 `/wrk2-api/post/compose` 500과 `getaddrinfo() ... Name or service not known` 로그가 사라지는지 확인한다."
+      }
+    }
+  }
+}

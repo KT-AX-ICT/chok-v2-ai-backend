@@ -1,0 +1,125 @@
+{
+  "job_id": 3,
+  "experiment_tag": "baseline-injection-v2-sort",
+  "git_branch": "experiment/baseline-injection",
+  "git_commit": "15bb2f5",
+  "prompt_versions": {
+    "router": null,
+    "scan": null,
+    "log": "version: log/v3-sort-by-anomaly (2026-07-24, experiment/baseline-injection)",
+    "metric": null,
+    "trace": null,
+    "report": null
+  },
+  "started_at": "2026-07-24T08:13:20.852842+00:00",
+  "elapsed_seconds": 54.4,
+  "result": {
+    "type": "Perf_Contention",
+    "severity": "MID",
+    "service": "nginx",
+    "detail": {
+      "rca": {
+        "rootCause": "가장 유력한 원인은 nginx 유입 경로에서 시작된 단기 트래픽 또는 요청 처리량 증가로 인한 호스트/컨테이너 자원 경합입니다. 근거는 2026-07-23T08:04:35 이후 system_load1, disk I/O, network receive/transmit 및 다수 컨테이너 지표가 동시 상승한 점입니다. 다만 trace는 err=0이고 http_status_code=200만 확인되며, 로그에서도 2026-07-23T08:04:40.893492~08:07:27.069834 동안 주요 서비스의 성공 완료 로그가 이어져 기능 실패는 확인되지 않았습니다. media 서비스 시작 로그가 2026-07-23T08:04:31.988750에 있어 재시작 가능성은 있지만, 현재 Evidence만으로는 근본 원인으로 확정할 수 없습니다.",
+        "propagation": "nginx 유입 트래픽/요청 처리 증가 → 여러 컨테이너(media/hometimeline/usermention 등) CPU·메모리·네트워크 사용 증가 → 호스트 system_load1 및 disk/network I/O 상승 → 애플리케이션 로그상 요청 처리는 계속 성공",
+        "confidence": 58
+      },
+      "summary": {
+        "highlight": "2026-07-23T08:04:35 이후 nginx 유입 경로를 중심으로 시스템/컨테이너 부하와 I/O가 동시 상승했지만, trace와 로그에서는 명확한 요청 실패가 확인되지 않은 성능 경합성 이상입니다.",
+        "chips": [
+          "Perf_Contention",
+          "nginx",
+          "metric_spike",
+          "trace_err_0"
+        ],
+        "errorTags": [
+          "system_load1_peak_11.48",
+          "disk_io_increase",
+          "network_io_increase",
+          "E11000_duplicate_key_user"
+        ],
+        "neutralTags": [
+          "http_status_code_200_only",
+          "media_start_log_unconfirmed_restart",
+          "user_E11000_recurrent_pattern"
+        ]
+      },
+      "evidence": {
+        "log": {
+          "conclusion": "08:04:40.893492~08:07:27.069834 사이에 composepost/usertimeline/hometimeline/poststorage/urlshorten/usermention/uniqueid 전반에서 요청 수신→처리→완료 로그가 연쇄적으로 이어졌고, 실패나 타임아웃 같은 직접적인 장애 로그는 보이지 않습니다. 유일한 ERROR는 user 서비스의 `Failed to insert user ... E11000 duplicate key error`가 08:04:40.893492~08:07:27.025128에 32회 있었지만, 평소24h에도 200회 발생하는 반복 패턴이라 이번 사건의 근본 원인으로 단정하기는 어렵습니다; media 서비스는 08:02:47.978995와 트리거 시각인 08:04:31.988750에 시작 로그가 보여 재시작 가능성은 있으나, 이 로그만으로는 확정할 수 없습니다.",
+          "source": "압축 로그 요약(11678건→60패턴) 기준. 주요 근거: 08:04:40대 이후 다수 서비스의 성공 완료 로그 연쇄, user ERROR 32회(평소24h=200), media 서비스 시작 로그 2회(08:02:47.978995, 08:04:31.988750)."
+        },
+        "trace": {
+          "conclusion": "이상 징후 없음 — 해당 trace 수집 구간(2026-07-23T08:01:31.988750 ~ 2026-07-23T08:07:31.988750)에서 집계된 모든 스팬은 err=0이며, 예시 스팬에서도 http_status_code=200만 확인됨(예: [2026-07-23T08:06:33.438435] /wrk2-api/post/compose).",
+          "source": "trace",
+          "originService": "nginx"
+        },
+        "metric": {
+          "conclusion": "이상 징후 발견 — 2026-07-23T08:04:35 이후 여러 지표에서 급증/피크가 확인됨. 예: system_load1 peak=11.48@08:04:35, system_disk_io_time onset=0.02954@08:04:36 peak=0.03812@08:07:21, system_disk_read_bytes incident mean=6.531e+05 (onset=6.033e+05@08:04:38 peak=6.687e+05@08:04:53), system_network_receive_bytes onset=26.8@08:05:08 peak=48.6@08:07:23, system_network_transmit_bytes onset=479.1@08:05:09 peak=971.5@08:07:24. 또한 다수 컨테이너(cadvisor, media, hometimeline, nginx, usermention 등)에서도 container_network_receive/transmit 및 container_cpu/container_memory가 incident 구간에서 증가 후 피크가 관측됨.",
+          "source": "metric-agent(scan)"
+        }
+      },
+      "impact": {
+        "affected": [
+          {
+            "service": "nginx",
+            "type": "origin_service 및 container network/부하 증가 관측"
+          },
+          {
+            "service": "media",
+            "type": "container 지표 증가 및 시작 로그 2회 관측; 재시작 가능성은 미확정"
+          },
+          {
+            "service": "hometimeline",
+            "type": "container network/cpu/memory 증가 관측"
+          },
+          {
+            "service": "usermention",
+            "type": "container network/cpu/memory 증가 관측"
+          },
+          {
+            "service": "cadvisor",
+            "type": "container network/cpu/memory 증가 관측"
+          },
+          {
+            "service": "user",
+            "errors": 32,
+            "type": "`E11000 duplicate key error`; 반복 패턴으로 이번 사건 원인 가능성 낮음"
+          }
+        ],
+        "metrics": [
+          {
+            "label": "system_load1",
+            "value": "peak=11.48@08:04:35"
+          },
+          {
+            "label": "system_disk_io_time",
+            "value": "onset=0.02954@08:04:36, peak=0.03812@08:07:21"
+          },
+          {
+            "label": "system_disk_read_bytes",
+            "value": "incident mean=6.531e+05, onset=6.033e+05@08:04:38, peak=6.687e+05@08:04:53"
+          },
+          {
+            "label": "system_network_receive_bytes",
+            "value": "onset=26.8@08:05:08, peak=48.6@08:07:23"
+          },
+          {
+            "label": "system_network_transmit_bytes",
+            "value": "onset=479.1@08:05:09, peak=971.5@08:07:24"
+          }
+        ]
+      },
+      "actions": {
+        "steps": [
+          "nginx에서 2026-07-23T08:04:35~08:07:31.988750 구간의 요청량, upstream latency, 4xx/5xx, 특히 trace 예시의 `/wrk2-api/post/compose` 경로 호출량을 확인해 트래픽 급증 여부를 확정합니다.",
+          "호스트 지표에서 system_load1 peak=11.48@08:04:35, system_disk_io_time peak=0.03812@08:07:21, system_network_receive/transmit peak@08:07:23~08:07:24 시점의 top process/container를 확인하고 nginx, media, hometimeline, usermention, cadvisor 사용량을 대조합니다.",
+          "media 서비스의 시작 로그가 2026-07-23T08:02:47.978995 및 2026-07-23T08:04:31.988750에 있었으므로 Docker/Kubernetes 이벤트, restart count, exit code, OOMKilled 여부, 최근 배포 여부를 확인합니다.",
+          "로그상 2026-07-23T08:04:40.893492~08:07:27.069834에 composepost/usertimeline/hometimeline/poststorage/urlshorten/usermention/uniqueid 완료 로그가 이어졌으므로, 같은 구간의 latency p95/p99와 timeout 로그를 추가 조회해 ‘성공했지만 느린’ 상태였는지 확인합니다.",
+          "user 서비스의 `E11000 duplicate key error` 32회는 평소24h=200회 반복 패턴으로 이번 부하의 직접 원인 근거는 약하므로, 별도 이슈로 idempotency/retry/unique key 처리 로직을 점검해 알림 노이즈를 줄입니다.",
+          "트래픽 급증이 확인되면 nginx rate limit/connection limit, compose 경로별 backpressure, 관련 서비스의 CPU/메모리 limit 및 autoscaling 임계값을 조정합니다. media 재시작이 확인되면 재시작 원인에 맞춰 healthcheck timeout, 리소스 limit, 배포 롤백 여부를 결정합니다."
+        ],
+        "recovery": "현재 Evidence 기준으로 trace err=0 및 http_status_code=200만 확인되어 즉시 서비스 복구보다 2026-07-23T08:04:31.988750~08:07:31.988750 구간의 부하 원인 확인이 우선입니다. 단, media 재시작이 확인되면 해당 컨테이너의 exit reason과 healthcheck 상태를 먼저 조치해야 합니다."
+      }
+    }
+  }
+}

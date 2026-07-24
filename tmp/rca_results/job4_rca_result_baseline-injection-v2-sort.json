@@ -1,0 +1,104 @@
+{
+  "job_id": 4,
+  "experiment_tag": "baseline-injection-v2-sort",
+  "git_branch": "experiment/baseline-injection",
+  "git_commit": "15bb2f5",
+  "prompt_versions": {
+    "router": null,
+    "scan": null,
+    "log": "version: log/v3-sort-by-anomaly (2026-07-24, experiment/baseline-injection)",
+    "metric": null,
+    "trace": null,
+    "report": null
+  },
+  "started_at": "2026-07-24T08:22:11.703118+00:00",
+  "elapsed_seconds": 31.6,
+  "result": {
+    "type": "Perf_Contention",
+    "severity": "HIGH",
+    "service": "unknown(node-level resource contention)",
+    "detail": {
+      "rca": {
+        "rootCause": "가장 유력한 근본 원인은 2026-07-23T08:11:04.721365 직후 발생한 노드 수준 CPU 포화와 I/O 부담 증가로 인한 리소스 경합입니다. trace에서는 HTTP 에러나 스팬 소실 없이 composepost fanout 경로, 특히 write_home_timeline_client → write_home_timeline_server → get_followers_client → socialgraph(get_followers_server, social_graph_redis_get_client) 구간이 가장 긴 지연 기여 경로로 나타났습니다. metric은 노드 CPU incident 평균 99.8% 및 여러 서비스 컨테이너의 동시 지표 이탈을 보여 단일 애플리케이션 에러보다는 공통 리소스 병목을 지지합니다. log의 UserHandler MongoDB E11000 duplicate key error는 2026-Jul-23 08:10:53.191826~08:14:02.005311에 반복 관측되지만, trace의 composepost → hometimeline → socialgraph 지연 경로와 직접 연결된 증거는 없어 별도 동시 발생 이슈로 보는 것이 더 타당합니다. 다만 metric만으로 특정 단일 서비스가 먼저 원인을 제공했는지는 단정할 수 없어 일부 불확실성이 남습니다.",
+        "propagation": "node-level CPU/I/O 리소스 경합 → composepost fanout 처리 지연 → hometimeline write_home_timeline 경로 지연 → socialgraph get_followers/Redis 조회 구간 지연 증가",
+        "confidence": 67
+      },
+      "summary": {
+        "highlight": "2026-07-23T08:11:04.721365 직후 노드 CPU가 거의 100%로 포화되며 composepost fanout의 hometimeline → socialgraph follower 조회 경로 지연이 커진 것으로 보입니다.",
+        "chips": [
+          "Perf_Contention",
+          "CPU saturation",
+          "composepost fanout latency"
+        ],
+        "errorTags": [
+          "MongoDB E11000 duplicate key error",
+          "duplicate user_id_1"
+        ],
+        "neutralTags": [
+          "trace HTTP error 없음",
+          "스팬 소실 없음",
+          "UserHandler duplicate key는 별도 동시 발생 가능성"
+        ]
+      },
+      "evidence": {
+        "log": {
+          "conclusion": "이상 징후 발견 — 2026-Jul-23 08:10:53.191826~08:14:02.005311 구간에 UserHandler에서 MongoDB 삽입 중 E11000 duplicate key error(duplicate user_id_1) 발생 로그가 반복 관측됨. 그 외에는 다수의 INFO 로그에서 timeline/composepost 읽기/쓰기 및 완료 처리가 정상 흐름으로 보이며, 에러 레벨 로그는 해당 duplicate key 건이 대표적으로 관측됨.",
+          "source": "[UserHandler.h:190:RegisterUserWithId] Failed to insert user j1 to MongoDB: E11000 duplicate key error collection: user.user index: user_id_1 dup key: { user_id: 444 } (2026-Jul-23 08:10:53.191826~08:14:02.005311)"
+        },
+        "trace": {
+          "conclusion": "trace 상에서는 HTTP 에러나 스팬 소실은 보이지 않고, 지연은 주로 composepost의 fanout 경로에서 발생했습니다. 그중 write_home_timeline_client → write_home_timeline_server → get_followers_client → socialgraph(get_followers_server, social_graph_redis_get_client) 경로가 가장 길었고, composepost 전체 지연의 주요 기여 경로로 보입니다. 다만 집계된 값만으로는 socialgraph가 진원인지, hometimeline 내부 오버헤드인지까지는 단정하기 어렵습니다.",
+          "source": "composepost → hometimeline → socialgraph 경로의 지연 집계와 exemplar"
+        },
+        "metric": {
+          "conclusion": "메트릭상 트리거 시각 2026-07-23T08:11:04.721365 직후부터 전반적인 부하 상승이 보입니다. 여러 서비스 컨테이너의 CPU·memory·network 지표가 2026-07-23T08:11:10~2026-07-23T08:11:13에 동시에 이탈했고, 노드 CPU는 incident 구간 평균 99.8% (min 98.9, max 100)로 사실상 포화 상태였습니다. 또한 system_disk_write_bytes는 baseline 평균 1.642e+05에서 incident 평균 6.404e+05으로 증가해 I/O 부담도 함께 커졌습니다. 다만 특정 단일 서비스만 먼저 튄 형태라기보다 다수 서비스가 함께 올라간 패턴이라, 메트릭만으로는 주 원인을 하나로 단정하기 어렵습니다.",
+          "source": "metric"
+        }
+      },
+      "impact": {
+        "affected": [
+          {
+            "service": "composepost",
+            "type": "latency"
+          },
+          {
+            "service": "hometimeline",
+            "type": "latency"
+          },
+          {
+            "service": "socialgraph",
+            "type": "latency"
+          },
+          {
+            "service": "UserHandler",
+            "type": "duplicate_key_error"
+          }
+        ],
+        "metrics": [
+          {
+            "label": "node_cpu incident 평균",
+            "value": "99.8% (min 98.9, max 100)"
+          },
+          {
+            "label": "system_disk_write_bytes",
+            "value": "baseline 평균 1.642e+05 → incident 평균 6.404e+05"
+          },
+          {
+            "label": "동시 지표 이탈",
+            "value": "2026-07-23T08:11:10~2026-07-23T08:11:13 여러 서비스 컨테이너 CPU·memory·network"
+          }
+        ]
+      },
+      "actions": {
+        "steps": [
+          "2026-07-23T08:11:10~2026-07-23T08:11:13에 동시에 이탈한 서비스 컨테이너 목록을 확인해 CPU를 가장 많이 사용한 컨테이너와 노드를 식별합니다.",
+          "composepost 요청 중 fanout 경로(write_home_timeline_client → write_home_timeline_server → get_followers_client → socialgraph)를 대상으로 동일 시간대의 p95/p99 latency와 요청량을 확인합니다.",
+          "hometimeline에서 socialgraph get_followers 호출이 과다 반복되거나 follower 수가 큰 사용자 요청이 집중됐는지 확인하고, 필요 시 해당 fanout 작업을 임시 제한하거나 비동기 큐로 우회합니다.",
+          "노드 CPU 포화가 지속 중이면 composepost/hometimeline/socialgraph 인스턴스를 다른 노드로 재배치하거나 수평 확장해 즉시 부하를 분산합니다.",
+          "system_disk_write_bytes 증가 원인을 확인하기 위해 동일 시간대의 컨테이너별 write I/O를 확인하고, 로그 폭증 또는 DB/Redis 쓰기 증가가 있는 서비스를 분리합니다.",
+          "UserHandler의 MongoDB E11000 duplicate key error는 composepost 지연 경로와 직접 연결된 증거는 없으므로 별도 이슈로 분리해, RegisterUserWithId가 기존 user_id=444를 재삽입하는 호출 경로와 idempotency 처리를 점검합니다."
+        ],
+        "recovery": "노드 CPU가 사실상 포화된 상태였으므로 우선 composepost fanout 경로의 부하를 낮추고, hometimeline/socialgraph 조회 지연을 완화하는 방향의 복구가 필요합니다."
+      }
+    }
+  }
+}

@@ -15,3 +15,9 @@ tmp/
 
 # 번들 원본(logs/metrics/traces) 파일 저장소 — 로컬 실행 시 생성, 배포는 볼륨 마운트
 data/
+
+# baseline(정상 운영) 참고 데이터셋 — 실험/튜닝 전용, 용량 커서 커밋 안 함
+datasets/baseline/
+
+# 실험용 원본 스냅샷 번들 샘플 — 건당 수 MB, data/bundles와 동일한 이유로 커밋 안 함
+tests/sample_bundle/
