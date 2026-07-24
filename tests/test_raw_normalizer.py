@@ -9,7 +9,6 @@ from app.services.raw_normalizer import (
     normalize_trace,
 )
 
-
 # ---------------------------------------------------------------- log
 
 

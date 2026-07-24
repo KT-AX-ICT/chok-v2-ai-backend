@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Callable
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 def _utc_naive_now() -> datetime:
     # DB의 func.now()가 naive UTC이므로 비교 기준도 naive UTC로 맞춘다.
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class DeliveryReconciler:

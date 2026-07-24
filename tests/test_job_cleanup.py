@@ -4,7 +4,7 @@ updated_at을 명시 주입해 보존기간 경계와 상태별 보호를 결정
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -17,7 +17,7 @@ from app.services.job_cleanup import JobCleaner
 
 
 def _utc_naive_now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @pytest.fixture()

@@ -1,4 +1,3 @@
-import pytest
 from httpx import AsyncClient
 
 BUNDLE_PAYLOAD = {
@@ -15,7 +14,7 @@ BUNDLE_PAYLOAD = {
         "log": {
             "intervals": [
                 {"fileName": "UserService_.log", "status": "missing"},
-                {"fileName": "NginxThrift_.log", "start": "2026-01-15T10:01:00Z", "end": "2026-01-15T10:03:00Z", "present": "empty"},
+                {"fileName": "NginxThrift_.log", "start": "2026-01-15T10:01:00Z", "end": "2026-01-15T10:03:00Z", "status": "data", "recordCount": 1, "totalCount": 20},
             ]
         },
         "metric": {"intervals": [{"fileName": "", "start": "2026-01-15T10:00:00Z", "end": "2026-01-15T10:03:00Z", "status": ""}]},
@@ -97,6 +96,18 @@ async def test_ingest_db_failure_returns_503(client: AsyncClient, monkeypatch):
     assert resp.status_code == 503
 
 
+async def test_ingest_ignores_removed_present_field(client: AsyncClient):
+    """SDK가 구형 present를 계속 보내도 422로 막지 않는다(Pydantic extra=ignore)."""
+    legacy = {
+        **BUNDLE_PAYLOAD,
+        "modality_info": {
+            "log": {"intervals": [{"fileName": "a.log", "present": "empty"}]},
+        },
+    }
+    resp = await client.post("/ingest", json=legacy)
+    assert resp.status_code == 201
+    
+    
 async def test_ingest_stores_light_bundle_and_signals_file(client: AsyncClient, db_engine):
     """무거운 3종은 파일로 빠지고, DB에는 경량 번들 + 파일 이름만 남는다."""
     from sqlalchemy import select

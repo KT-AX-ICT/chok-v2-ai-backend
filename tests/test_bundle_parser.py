@@ -11,6 +11,7 @@ from app.services.bundle_parser import (
     parse_for_log_agent,
     parse_for_metric_agent,
     parse_for_trace_agent,
+    render_interval,
 )
 
 _BUNDLE = IngestBundle(
@@ -25,7 +26,13 @@ _BUNDLE = IngestBundle(
             ModalityInterval(fileName="UserService_.log", status="missing"),
         ]),
         metric=ModalityDetail(intervals=[
-            ModalityInterval(start="2026-01-15T10:00:00Z", end="2026-01-15T10:03:00Z", status="ok"),
+            ModalityInterval(
+                start="2026-01-15T10:00:00Z",
+                end="2026-01-15T10:03:00Z",
+                status="data",
+                record_count=1523,
+                total_count=20000,
+            ),
         ]),
         trace=ModalityDetail(intervals=[]),
     ),
@@ -49,10 +56,73 @@ def test_log_agent_includes_interval_summary():
     assert "missing" in result["log_intervals"]
 
 
-def test_log_agent_excludes_filename():
-    """LLM 입력에 파일명이 노출되지 않음 (정답 유출 방지)."""
+def test_log_agent_includes_filename():
+    """구간 정보에 파일명을 싣는다 — 없으면 missing이 어느 파일인지 특정 불가."""
     result = parse_for_log_agent(_BUNDLE)
-    assert "UserService_.log" not in result["log_intervals"]
+    assert "UserService_.log" in result["log_intervals"]
+
+
+def test_interval_omits_absent_fields():
+    """값이 없는 필드는 줄에서 뺀다 — 항목 수만큼 토큰이 곱해지므로."""
+    line = render_interval(ModalityInterval(fileName="UserService_.log", status="missing"))
+    assert line == "[시간 미상] UserService_.log status=missing"
+
+
+def test_interval_renders_both_counts():
+    """받은 건수/원본 건수를 그대로 노출 — 절단 여부는 LLM이 두 수로 판단."""
+    line = render_interval(
+        ModalityInterval(
+            start="2026-01-15T10:00:00Z",
+            end="2026-01-15T10:03:00Z",
+            status="data",
+            record_count=1523,
+            total_count=20000,
+        )
+    )
+    assert "1523/20000건" in line
+    assert "[10:00:00 ~ 10:03:00]" in line  # 날짜부 생략, 시각만 (압축 로그와 형식 일치)
+    assert "2026-01-15" not in line  # 날짜는 상단 윈도/트리거에만
+    assert "UserService" not in line  # 파일명 없으면 빈 자리도 안 남김
+
+
+def test_interval_renders_single_count():
+    """한쪽만 온 경우에도 어느 쪽 수인지 구분되게 표기."""
+    assert "1523건" in render_interval(ModalityInterval(record_count=1523))
+    assert "원본 20000건" in render_interval(ModalityInterval(total_count=20000))
+
+
+def test_interval_has_no_invented_status():
+    """정의에 없는 'ok' 폴백 금지 — status가 없으면 status 자체를 출력하지 않는다."""
+    line = render_interval(ModalityInterval(fileName="a.log"))
+    assert "status" not in line
+    assert "ok" not in line
+
+
+def test_interval_prepends_date_when_crossing_midnight():
+    """자정을 넘어 시작·끝 날짜가 갈리면 MM-DD를 병기해 순서를 명확히 한다."""
+    line = render_interval(
+        ModalityInterval(
+            fileName="a.log",
+            start="2026-01-15T23:58:00Z",
+            end="2026-01-16T00:01:00Z",
+            status="data",
+        )
+    )
+    assert "[01-15 23:58:00 ~ 01-16 00:01:00]" in line
+
+
+def test_interval_omits_date_when_same_day():
+    """같은 날 구간은 날짜 없이 시각만 — 병기는 자정 넘김 때만."""
+    line = render_interval(
+        ModalityInterval(
+            fileName="a.log",
+            start="2026-01-15T23:00:00Z",
+            end="2026-01-15T23:30:00Z",
+            status="data",
+        )
+    )
+    assert "[23:00:00 ~ 23:30:00]" in line
+    assert "01-15" not in line
 
 
 def test_metric_agent_input_has_metrics():

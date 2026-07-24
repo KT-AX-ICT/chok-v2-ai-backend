@@ -39,7 +39,7 @@ async def test_split_does_not_mutate_input():
 
 
 async def test_file_holds_only_signals():
-    light, name = await bundle_store.split_and_save(dict(_BUNDLE))
+    _light, name = await bundle_store.split_and_save(dict(_BUNDLE))
     saved = json.loads((bundle_store.storage_dir() / name).read_text(encoding="utf-8"))
 
     assert set(saved) == set(bundle_store.SIGNAL_KEYS)

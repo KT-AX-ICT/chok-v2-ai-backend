@@ -38,15 +38,17 @@ _EMPTY = "(없음)"
 def parse_ts(ts: str) -> datetime | None:
     """ISO-8601 문자열 파싱(Z 허용). 실패 시 None — 비교가 필요한 곳만 사용."""
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return datetime.fromisoformat(ts)  # 3.11+ fromisoformat은 'Z'를 직접 처리
     except (ValueError, AttributeError):
         return None
 
 
-def _short_ts(ts: str) -> str:
+def short_ts(ts: str) -> str:
     """절대 시각 축약 — 날짜부 생략, 시각부(HH:MM:SS[.fff])만.
 
-    번들이 단일 윈도 내라 날짜 중복이 불필요하다. 파싱 불가 형식은 원문 유지.
+    번들이 단일 윈도 내라 날짜 중복이 불필요하다. 날짜·기준시각은 프롬프트 상단
+    윈도/트리거에 전체 형식으로 한 번만 싣고, 본문·구간은 시각만 남긴다.
+    파싱 불가 형식은 원문 유지. bundle_parser의 구간 렌더링도 이 함수를 공유한다.
     """
     m = re.search(r"\d{2}:\d{2}:\d{2}(?:\.\d+)?", ts)
     return m.group(0) if m else ts
@@ -116,9 +118,9 @@ def compress_logs(items: list[ModalityItem]) -> str:
     lines = [f"# 로그 패턴 dedup ({len(items)}건 → {len(groups)}패턴) — 서비스<TAB>레벨<TAB>횟수<TAB>최초~최후<TAB>샘플 원문"]
     for (service, level, _), g in sorted(groups.items(), key=sort_key):
         span = (
-            _short_ts(g["first"])
+            short_ts(g["first"])
             if g["count"] == 1
-            else f"{_short_ts(g['first'])}~{_short_ts(g['last'])}"
+            else f"{short_ts(g['first'])}~{short_ts(g['last'])}"
         )
         lines.append(f"{service or '?'}\t{level}\t×{g['count']}\t{span}\t{g['sample']}")
     return "\n".join(lines)
@@ -224,14 +226,14 @@ def compress_metrics(items: list[ModalityItem], trigger_time: str) -> str:
                 onset = deviants[0]
                 peak = max(deviants, key=lambda p: abs(p[2] - mu))
                 anomaly = (
-                    f"onset={_fmt(onset[2])}@{_short_ts(onset[1])} "
-                    f"peak={_fmt(peak[2])}@{_short_ts(peak[1])}"
+                    f"onset={_fmt(onset[2])}@{short_ts(onset[1])} "
+                    f"peak={_fmt(peak[2])}@{short_ts(peak[1])}"
                 )
         lines.append(f"{service or '?'}\t{label}\tbase {base_txt}\tincid {incid_txt}\t{anomaly}")
 
     if unparsed:
         lines.append("# 미파싱 원문 통과 — [시각] 원문")
-        lines.extend(f"[{_short_ts(i.timestamp)}] {i.raw}" for i in unparsed)
+        lines.extend(f"[{short_ts(i.timestamp)}] {i.raw}" for i in unparsed)
     return "\n".join(lines)
 
 
@@ -259,9 +261,7 @@ def span_fields(raw: str) -> tuple[str, float | None, bool]:
         )
         if (v := d.get("duration_us")) is not None:
             duration_ms = float(v) / 1000
-        elif (v := d.get("duration_ms")) is not None:
-            duration_ms = float(v)
-        elif (v := d.get("duration")) is not None:
+        elif (v := d.get("duration_ms")) is not None or (v := d.get("duration")) is not None:
             duration_ms = float(v)
         status = str(d.get("status") or d.get("http_status_code") or "")
         is_err = bool(TRACE_ERR_RE.search(status))
@@ -296,7 +296,7 @@ def compress_traces(items: list[ModalityItem]) -> str:
         g["err"] += int(is_err)
         if duration_ms is not None:
             g["durations"].append(duration_ms)
-        minute = _short_ts(item.timestamp)[:5]  # HH:MM
+        minute = short_ts(item.timestamp)[:5]  # HH:MM
         volume[item.service or "?"][minute] += 1
         parsed.append((item, duration_ms, is_err))
 
@@ -327,6 +327,6 @@ def compress_traces(items: list[ModalityItem]) -> str:
     if exemplars:
         lines.append("# exemplar 원문(가장 느린/에러 스팬) — [시각] 서비스 원문")
         lines.extend(
-            f"[{_short_ts(i.timestamp)}] {i.service or '?'} {i.raw}" for i in exemplars
+            f"[{short_ts(i.timestamp)}] {i.service or '?'} {i.raw}" for i in exemplars
         )
     return "\n".join(lines)

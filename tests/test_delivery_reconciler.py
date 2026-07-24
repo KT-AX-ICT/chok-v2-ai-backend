@@ -105,7 +105,6 @@ async def test_reconciler_keeps_delivering_on_failure(factory, monkeypatch):
 async def test_signals_file_discarded_after_redelivery(factory, monkeypatch):
     """재전송으로 DONE이 확정되면 원본 파일을 회수한다."""
     import app.services.spring_client as spring_mod
-
     from app.services import bundle_store
 
     async def _ok(*args, **kwargs):
