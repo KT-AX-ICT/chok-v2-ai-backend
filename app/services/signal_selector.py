@@ -14,7 +14,8 @@ Spring 전송은 여전히 전량이었고, Spring은 같은 MySQL을 쓰므로 
   2) 그룹 정렬 에러·이상 포함 그룹 우선 → 큰 그룹 우선
   3) 그룹 내   log=ERROR>WARN>기타 / metric=3σ 이상점 우선 / trace=에러>느린 순
   4) 라운드로빈으로 각 그룹에서 1건씩 뽑아 상한을 채움
-  5) timestamp 오름차순으로 재정렬 — 화면이 시간 흐름을 따르도록
+  5) 시간 오름차순으로 재정렬 — 화면이 시간 흐름을 따르도록 (문자열이 아니라
+     datetime으로 비교. 이유는 _chron 참조)
 
 라운드로빈을 쓰는 이유: 25만 건이 전부 같은 에러여도 그 패턴은 한 바퀴에 1건씩만
 가져가므로, 희귀하지만 중요한 패턴이 밀려나지 않는다. 고정 쿼터(그룹당 N건)는
@@ -28,6 +29,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from datetime import datetime, timezone
 from statistics import mean, pstdev
 from typing import Callable, NamedTuple
 
@@ -48,6 +50,27 @@ PAYLOAD_KEYS: dict[str, str] = {"logs": "log", "metrics": "metric", "traces": "t
 
 # 정렬에서 "우선"과 "보통"을 나타내는 등급. 작을수록 먼저.
 _PRIOR, _NORMAL = 0, 1
+
+# 파싱 불가 시각의 정렬 위치. 계약상 timestamp는 /ingest에서 ISO-8601로 검증되므로
+# 정상 흐름에선 쓰이지 않는 방어선이다.
+_UNKNOWN_TIME = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _chron(ts: str) -> datetime:
+    """정렬용 시각. 문자열 비교로는 시간순이 보장되지 않아 datetime으로 변환한다.
+
+    문자열 정렬이 깨지는 경우:
+      - 'Z'와 소수부가 섞이면 '.'(46) < 'Z'(90)이라 10:00:00.5Z가 10:00:00Z보다 앞
+      - 타임존 오프셋이 섞이면(+09:00 등) 자리값 비교가 무의미
+    SDK가 모달리티마다 다른 정밀도로 보내므로(logs는 마이크로초, metrics는 초)
+    실제로 섞여 들어올 수 있다.
+
+    naive는 UTC로 간주한다 — naive와 aware를 그대로 비교하면 TypeError가 난다.
+    """
+    dt = parse_ts(ts)
+    if dt is None:
+        return _UNKNOWN_TIME
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 class Selection(NamedTuple):
@@ -211,5 +234,6 @@ def select_signals(
             len(groups) - cap,
         )
 
-    picked.sort(key=lambda i: items[i].get("timestamp") or "")
+    # 동점(같은 시각)은 원본 인덱스로 끊어 수집기 순서를 보존한다.
+    picked.sort(key=lambda i: (_chron(items[i].get("timestamp") or ""), i))
     return Selection([items[i] for i in picked], total)

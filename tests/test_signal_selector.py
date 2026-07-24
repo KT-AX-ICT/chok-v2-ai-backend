@@ -162,6 +162,49 @@ def test_result_is_sorted_by_timestamp():
     assert stamps == sorted(stamps)
 
 
+def test_mixed_precision_and_zone_sorts_chronologically():
+    """SDK가 모달리티마다 다른 형식으로 보내도 시간순이 유지된다.
+
+    문자열 정렬이면 '.'(46) < 'Z'(90)이라 10:00:00.5Z가 10:00:00Z보다 앞서고,
+    오프셋이 섞이면 자리값 비교가 아예 무의미해진다.
+    """
+    stamps = [
+        "2026-01-15T10:00:02Z",
+        "2026-01-15T10:00:00.500000Z",  # 문자열 정렬이면 잘못 앞으로 감
+        "2026-01-15T10:00:00Z",
+        "2026-01-15T09:00:01-01:00",  # = 10:00:01Z
+        "2026-01-15T10:00:03.000001",  # tz 없음(naive) — 비교 시 TypeError 위험
+    ]
+    items = [
+        {"timestamp": ts, "service": "api", "raw": "ERROR " + " ".join(["x"] * (i + 2))}
+        for i, ts in enumerate(stamps)
+    ]
+
+    selection = select_signals("log", items, _TRIGGER, limit=4)
+
+    assert [item["timestamp"] for item in selection.items] == [
+        "2026-01-15T10:00:00Z",
+        "2026-01-15T10:00:00.500000Z",
+        "2026-01-15T09:00:01-01:00",
+        "2026-01-15T10:00:02Z",
+    ]
+
+
+def test_identical_timestamps_keep_collector_order():
+    """같은 시각이 흔한 메트릭(초 단위)에서도 순서가 결정적이어야 한다."""
+    items = [
+        {"timestamp": "2026-01-15T10:00:00Z", "service": f"svc-{i}", "raw": f"cpu=0.{i}"}
+        for i in range(300)
+    ]
+
+    first = select_signals("metric", items, _TRIGGER, limit=50)
+    second = select_signals("metric", items, _TRIGGER, limit=50)
+
+    assert first.items == second.items
+    services = [item["service"] for item in first.items]
+    assert services == sorted(services, key=lambda s: int(s.split("-")[1]))
+
+
 def test_group_count_over_limit_is_logged(caplog):
     """그룹 수가 상한을 넘으면 다양성 보장이 깨지는 유일한 경우 — 근거를 남긴다.
 
