@@ -164,6 +164,113 @@ async def test_missing_job_is_skipped_without_crash(factory):
     await q.stop()  # 예외 없이 정상 종료되면 성공
 
 
+async def test_missing_signals_file_marks_failed_and_notifies_spring(factory, monkeypatch):
+    """원본 파일이 사라지면 분석 자체가 불가 — 조용히 두지 않고 FAILED 확정 + Spring 통지."""
+    import app.services.spring_client as spring_mod
+
+    sent: list[int] = []
+
+    async def _capture(job_id, bundle, error):
+        sent.append(job_id)
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_failure", _capture)
+
+    async def runner(job_id: int, bundle: IngestBundle):  # 복원 단계에서 막혀야 함
+        raise AssertionError("원본 없는 job에 runner가 호출됨")
+
+    async with factory() as db:
+        job = IngestJob(
+            status="PENDING",
+            bundle=_make_bundle().model_dump(),
+            signals_path="없는파일.json",
+        )
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.job_id
+
+    q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
+    q.start()
+    await q.enqueue(job_id)
+    await q.stop()
+
+    async with factory() as db:
+        job = (
+            await db.execute(select(IngestJob).where(IngestJob.job_id == job_id))
+        ).scalar_one()
+    assert job.status == "FAILED"
+    assert "원본" in job.error  # 사유가 남아야 추적 가능
+    assert sent == [job_id]
+
+
+async def test_signals_file_discarded_after_delivery(factory, monkeypatch):
+    """전송 성공으로 DONE이 확정되면 원본 파일을 회수한다."""
+    import app.services.spring_client as spring_mod
+    from app.services import bundle_store
+
+    async def _ok(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _ok)
+
+    light, name = await bundle_store.split_and_save(_make_bundle().model_dump())
+    async with factory() as db:
+        job = IngestJob(status="PENDING", bundle=light, signals_path=name)
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.job_id
+
+    async def runner(job_id: int, bundle: IngestBundle) -> RcaResult:
+        return _valid_result()
+
+    q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
+    q.start()
+    await q.enqueue(job_id)
+    await q.stop()
+
+    async with factory() as db:
+        job = (
+            await db.execute(select(IngestJob).where(IngestJob.job_id == job_id))
+        ).scalar_one()
+    assert job.status == "DONE"
+    assert not (bundle_store.storage_dir() / name).exists()
+
+
+async def test_signals_file_kept_when_delivery_fails(factory, monkeypatch):
+    """전송 실패로 DELIVERING에 머물면 재전송 루프가 같은 파일을 다시 쓰므로 남겨둔다."""
+    import app.services.spring_client as spring_mod
+    from app.services import bundle_store
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("spring down")
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _boom)
+
+    light, name = await bundle_store.split_and_save(_make_bundle().model_dump())
+    async with factory() as db:
+        job = IngestJob(status="PENDING", bundle=light, signals_path=name)
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.job_id
+
+    async def runner(job_id: int, bundle: IngestBundle) -> RcaResult:
+        return _valid_result()
+
+    q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
+    q.start()
+    await q.enqueue(job_id)
+    await q.stop()
+
+    async with factory() as db:
+        job = (
+            await db.execute(select(IngestJob).where(IngestJob.job_id == job_id))
+        ).scalar_one()
+    assert job.status == "DELIVERING"
+    assert (bundle_store.storage_dir() / name).exists()  # 재전송용으로 보존
+
+
 async def test_concurrency_cap_limits_parallelism(factory):
     active = 0
     peak = 0

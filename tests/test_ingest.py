@@ -107,6 +107,32 @@ async def test_ingest_ignores_removed_present_field(client: AsyncClient):
     }
     resp = await client.post("/ingest", json=legacy)
     assert resp.status_code == 201
+    
+    
+async def test_ingest_stores_light_bundle_and_signals_file(client: AsyncClient, db_engine):
+    """무거운 3종은 파일로 빠지고, DB에는 경량 번들 + 파일 이름만 남는다."""
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.db.models import IngestJob
+    from app.services import bundle_store
+
+    resp = await client.post("/ingest", json=BUNDLE_PAYLOAD)
+    job_id = resp.json()["job_id"]
+
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    async with factory() as db:
+        job = (
+            await db.execute(select(IngestJob).where(IngestJob.job_id == job_id))
+        ).scalar_one()
+
+    assert job.signals_path  # 파일 이름이 기록됨
+    for key in bundle_store.SIGNAL_KEYS:
+        assert key not in job.bundle  # 무거운 배열은 DB에 없음
+    assert job.bundle["trigger_info"]["trigger_time"] == "2026-01-15T10:01:30Z"  # 메타는 유지
+
+    restored = await bundle_store.restore_bundle(job.bundle, job.signals_path)
+    assert restored.logs[0].raw == "ERROR connect timeout"  # 파일에서 원본 복원
 
 
 async def test_ingest_empty_modalities_accepted(client: AsyncClient):
