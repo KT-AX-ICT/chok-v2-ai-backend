@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
@@ -121,17 +122,26 @@ class RcaJobQueue:
 
         runner가 None을 반환하면(산출물 없음) 검증 없이 None을 통과시킨다.
         최초+재시도 2회 모두 실패하면 마지막 예외를 던져 상위에서 FAILED 처리한다.
+        각 attempt는 rca_overall_timeout_seconds로 캡한다(asyncio.wait_for) — 타임아웃도
+        TimeoutError(Exception 하위)라 아래 except Exception 재시도 경로에 그대로 흡수된다.
         """
         last_exc: Exception | None = None
         for attempt in (1, 2):
+            started = time.monotonic()
             try:
-                raw = await self._runner(job_id, bundle)
+                raw = await asyncio.wait_for(
+                    self._runner(job_id, bundle),
+                    timeout=settings.rca_overall_timeout_seconds,
+                )
                 if raw is None:
                     return None
                 return validate_rca_result(raw)
             except Exception as exc:  # noqa: BLE001 - 재시도·실패기록 위해 모든 예외 포괄
                 last_exc = exc
                 logger.warning("job %s RCA 시도 %d/2 실패: %s", job_id, attempt, exc)
+            finally:
+                elapsed = time.monotonic() - started
+                logger.info("job %s RCA 시도 %d 소요 %.1fs", job_id, attempt, elapsed)
         assert last_exc is not None
         raise last_exc
 
