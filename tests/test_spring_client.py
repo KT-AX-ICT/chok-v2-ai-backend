@@ -104,6 +104,96 @@ def test_payload_carries_provided_company_code():
     assert fail["companyCode"] == "SN042"
 
 
+# ------------------------------------------------------- 전송 상한 선별
+
+
+def _bulk_bundle(log_count: int) -> IngestBundle:
+    return IngestBundle(
+        window={"start": "2026-01-15T10:00:00Z", "end": "2026-01-15T10:03:00Z"},
+        trigger_info={"trigger_time": "2026-01-15T10:01:30Z", "triggered_by": ["log"]},
+        logs=[
+            {
+                "timestamp": "2026-01-15T10:01:00Z",
+                "service": "api",
+                "raw": f"ERROR boom {i}",
+            }
+            for i in range(log_count)
+        ],
+    )
+
+
+def test_result_payload_caps_signals_at_limit(monkeypatch):
+    """원본이 상한을 넘으면 잘라서 보낸다 — Spring도 같은 MySQL이라 한계가 같다."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "spring_signal_limit", 20)
+    payload = SpringClient._result_payload(_bulk_bundle(500), _result())
+
+    assert len(payload["logs"]) == 20
+
+
+def test_truncated_modality_notes_range_in_source(monkeypatch):
+    """잘린 모달리티는 evidence.source에 수록 범위를 남겨 '200건뿐'으로 오해되지 않게 한다."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "spring_signal_limit", 20)
+    payload = SpringClient._result_payload(_bulk_bundle(500), _result())
+
+    assert "전체 500건 중 주요 20건 수록" in payload["result"]["evidence"]["log"]["source"]
+
+
+def test_untruncated_modality_notes_full_coverage():
+    """잘리지 않은 모달리티도 '전량 수록'을 명시 — 문구 부재를 정보 없음으로 읽지 않게."""
+    payload = SpringClient._result_payload(_bundle(), _result())
+
+    assert "전체 1건 전량 수록" in payload["result"]["evidence"]["metric"]["source"]
+
+
+def test_note_appends_to_existing_llm_source():
+    """LLM이 쓴 source는 보존하고 뒤에 덧붙인다."""
+    result = _result()
+    result.detail.evidence.log.source = "user-service 로그"
+    payload = SpringClient._result_payload(_bundle(), result)
+
+    assert payload["result"]["evidence"]["log"]["source"] == "user-service 로그 (전체 1건 전량 수록)"
+
+
+def test_note_created_when_llm_left_source_empty():
+    """source는 optional — LLM이 안 채웠으면 고지 문구만으로 새로 만든다."""
+    payload = SpringClient._result_payload(_bundle(), _result())
+
+    assert payload["result"]["evidence"]["log"]["source"] == "전체 1건 전량 수록"
+
+
+def test_empty_modality_gets_no_note():
+    """항목이 0건이면 표기할 건수가 없으므로 source를 만들지 않는다."""
+    bundle = IngestBundle(
+        window={"start": "2026-01-15T10:00:00Z", "end": "2026-01-15T10:03:00Z"},
+        trigger_info={"trigger_time": "2026-01-15T10:01:30Z", "triggered_by": ["log"]},
+    )
+    payload = SpringClient._result_payload(bundle, _result())
+
+    assert "source" not in payload["result"]["evidence"]["log"]
+
+
+def test_conclusion_is_left_untouched():
+    """LLM 결론과 코드가 쓴 사실을 한 문장에 섞지 않는다."""
+    payload = SpringClient._result_payload(_bundle(), _result())
+
+    assert payload["result"]["evidence"]["log"]["conclusion"] == "lc"
+
+
+def test_failure_payload_also_caps_signals(monkeypatch):
+    """실패 경로도 번들을 그대로 싣기 때문에 크기 위험이 같다 — 상한을 동일 적용."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "spring_signal_limit", 20)
+    payload = SpringClient._failure_payload(_bulk_bundle(500), "boom")
+
+    assert len(payload["logs"]) == 20
+    assert "result" not in payload  # 고지할 자리가 없음
+
+
 def test_bundle_accepts_camelcase_company_code():
     """SDK가 보내는 camelCase(companyCode) 입력을 수용하고, by_alias로 다시 camelCase 출력."""
     bundle = IngestBundle.model_validate(

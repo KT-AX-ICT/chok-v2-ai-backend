@@ -10,6 +10,10 @@
   - 서비스별 그룹핑, JSON 대신 TSV 직렬화(키 반복 제거)
   - 파싱 불가 시 원문 통과 폴백(손실보다 안전 우선)
   - D-020/D-021(정답 유출 방지)은 상위 파서(bundle_parser)가 보장
+
+이 모듈의 산출물은 LLM 입력용(전량 집계 텍스트)이다. Spring 전송용 항목 선별은
+signal_selector가 담당하며, 판정 기준을 두 벌로 두지 않도록 아래를 공유한다:
+parse_ts · LEVEL_RE · LEVEL_ORDER · make_miner · metric_pairs · span_fields · TRACE_ERR_RE
 """
 
 from __future__ import annotations
@@ -31,7 +35,7 @@ _EMPTY = "(없음)"
 # ---------------------------------------------------------------- 공통 유틸
 
 
-def _parse_ts(ts: str) -> datetime | None:
+def parse_ts(ts: str) -> datetime | None:
     """ISO-8601 문자열 파싱(Z 허용). 실패 시 None — 비교가 필요한 곳만 사용."""
     try:
         return datetime.fromisoformat(ts)  # 3.11+ fromisoformat은 'Z'를 직접 처리
@@ -56,9 +60,9 @@ def _fmt(v: float) -> str:
 
 # ---------------------------------------------------------------- log dedup
 
-_LEVEL_RE = re.compile(r"\b(FATAL|CRITICAL|ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE)\b", re.IGNORECASE)
+LEVEL_RE = re.compile(r"\b(FATAL|CRITICAL|ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE)\b", re.I)
 # 레벨 정렬 우선순위 — 에러·경고 패턴을 먼저 보여준다
-_LEVEL_ORDER = {"FATAL": 0, "CRITICAL": 0, "ERROR": 0, "WARN": 1, "WARNING": 1}
+LEVEL_ORDER = {"FATAL": 0, "CRITICAL": 0, "ERROR": 0, "WARN": 1, "WARNING": 1}
 
 # 고카디널리티 토큰은 Drain 클러스터링 전에 마스킹해 템플릿을 안정화한다.
 # (나머지 가변부 — 유저ID·경로·호스트명 등 — 는 Drain이 데이터에서 학습)
@@ -71,7 +75,7 @@ _MASKING = [
 ]
 
 
-def _make_miner() -> TemplateMiner:
+def make_miner() -> TemplateMiner:
     """번들 1건 처리용 Drain 템플릿 마이너. 상태를 공유하지 않도록 호출마다 새로 만든다."""
     config = TemplateMinerConfig()
     config.masking_instructions = _MASKING
@@ -88,10 +92,10 @@ def compress_logs(items: list[ModalityItem]) -> str:
     if not items:
         return _EMPTY
 
-    miner = _make_miner()
+    miner = make_miner()
     groups: dict[tuple, dict] = {}
     for item in items:
-        level_m = _LEVEL_RE.search(item.raw)
+        level_m = LEVEL_RE.search(item.raw)
         level = level_m.group(1).upper() if level_m else "-"
         cluster = miner.add_log_message(item.raw)
         key = (item.service, level, cluster["cluster_id"])
@@ -109,7 +113,7 @@ def compress_logs(items: list[ModalityItem]) -> str:
 
     def sort_key(entry):
         (_, level, _), g = entry
-        return (_LEVEL_ORDER.get(level, 2), -g["count"])
+        return (LEVEL_ORDER.get(level, 2), -g["count"])
 
     lines = [f"# 로그 패턴 dedup ({len(items)}건 → {len(groups)}패턴) — 서비스<TAB>레벨<TAB>횟수<TAB>최초~최후<TAB>샘플 원문"]
     for (service, level, _), g in sorted(groups.items(), key=sort_key):
@@ -145,7 +149,7 @@ def _num(v) -> float | None:
     return float(v)
 
 
-def _metric_pairs(raw: str) -> list[tuple[str, float]]:
+def metric_pairs(raw: str) -> list[tuple[str, float]]:
     """raw에서 (라벨, 값) 추출. 지원 형식(넓은 순):
 
       1) 평면 JSON       {"cpu_usage": 53.5, "mem": 1200}     → 숫자 필드 전부
@@ -189,16 +193,16 @@ def compress_metrics(items: list[ModalityItem], trigger_time: str) -> str:
     series: dict[tuple[str, str], list] = defaultdict(list)
     unparsed: list[ModalityItem] = []
     for item in items:
-        pairs = _metric_pairs(item.raw)
+        pairs = metric_pairs(item.raw)
         if not pairs:
             unparsed.append(item)
             continue
         for label, value in pairs:
             series[(item.service, label)].append(
-                (_parse_ts(item.timestamp), item.timestamp, value)
+                (parse_ts(item.timestamp), item.timestamp, value)
             )
 
-    trigger_dt = _parse_ts(trigger_time)
+    trigger_dt = parse_ts(trigger_time)
     lines = [
         "# 메트릭 시리즈 통계 — 서비스<TAB>라벨<TAB>baseline(트리거 이전)<TAB>incident(이후)<TAB>이상점"
     ]
@@ -235,16 +239,19 @@ def compress_metrics(items: list[ModalityItem], trigger_time: str) -> str:
 
 # ------------------------------------------------------------- trace 집계
 
-_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(us|µs|ms|s)\b", re.IGNORECASE)
-_TRACE_ERR_RE = re.compile(r"\b(ERROR|TIMEOUT|FAIL\w*|5\d{2})\b", re.IGNORECASE)
+_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(us|µs|ms|s)\b", re.I)
+TRACE_ERR_RE = re.compile(r"\b(ERROR|TIMEOUT|FAIL\w*|5\d{2})\b", re.I)
 _EXEMPLAR_LIMIT = 3
 
 
-def _span_fields(item: ModalityItem) -> tuple[str, float | None, bool]:
-    """raw에서 (오퍼레이션, 지연 ms, 에러 여부) 추출. JSON 우선, 실패 시 정규식."""
+def span_fields(raw: str) -> tuple[str, float | None, bool]:
+    """raw에서 (오퍼레이션, 지연 ms, 에러 여부) 추출. JSON 우선, 실패 시 정규식.
+
+    signal_selector(Spring 전송 선별)도 같은 판정을 써야 하므로 raw 문자열만 받는다.
+    """
     operation, duration_ms, is_err = "?", None, False
     try:
-        d = json.loads(item.raw)
+        d = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
         d = None
     if isinstance(d, dict):
@@ -257,12 +264,12 @@ def _span_fields(item: ModalityItem) -> tuple[str, float | None, bool]:
         elif (v := d.get("duration_ms")) is not None or (v := d.get("duration")) is not None:
             duration_ms = float(v)
         status = str(d.get("status") or d.get("http_status_code") or "")
-        is_err = bool(_TRACE_ERR_RE.search(status))
+        is_err = bool(TRACE_ERR_RE.search(status))
     else:
-        if m := _DURATION_RE.search(item.raw):
+        if m := _DURATION_RE.search(raw):
             value, unit = float(m.group(1)), m.group(2).lower()
             duration_ms = value * {"us": 1e-3, "µs": 1e-3, "ms": 1.0, "s": 1e3}[unit]
-        is_err = bool(_TRACE_ERR_RE.search(item.raw))
+        is_err = bool(TRACE_ERR_RE.search(raw))
     return str(operation), duration_ms, is_err
 
 
@@ -283,7 +290,7 @@ def compress_traces(items: list[ModalityItem]) -> str:
     parsed: list[tuple[ModalityItem, float | None, bool]] = []
 
     for item in items:
-        operation, duration_ms, is_err = _span_fields(item)
+        operation, duration_ms, is_err = span_fields(item.raw)
         g = agg[(item.service, operation)]
         g["count"] += 1
         g["err"] += int(is_err)
