@@ -22,8 +22,8 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from app.agents.modality_agents import ModalityAgent, make_modality_agent
-from app.agents.router import Router, llm_router, route_with_guardrails
 from app.agents.report_llm import ReportAgent, assemble, llm_report
+from app.agents.router import Router, llm_router, route_with_guardrails
 from app.agents.schemas import MODALITIES, Depth, Modality
 from app.schemas.contracts import (
     IngestBundle,

@@ -9,7 +9,7 @@ deep은 mini 모델로 전체 심층 분석, scan은 nano 모델로 "이상 유�
 
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel

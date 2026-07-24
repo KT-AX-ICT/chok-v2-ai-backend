@@ -34,7 +34,7 @@ _EMPTY = "(없음)"
 def _parse_ts(ts: str) -> datetime | None:
     """ISO-8601 문자열 파싱(Z 허용). 실패 시 None — 비교가 필요한 곳만 사용."""
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return datetime.fromisoformat(ts)  # 3.11+ fromisoformat은 'Z'를 직접 처리
     except (ValueError, AttributeError):
         return None
 
@@ -54,7 +54,7 @@ def _fmt(v: float) -> str:
 
 # ---------------------------------------------------------------- log dedup
 
-_LEVEL_RE = re.compile(r"\b(FATAL|CRITICAL|ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE)\b", re.I)
+_LEVEL_RE = re.compile(r"\b(FATAL|CRITICAL|ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE)\b", re.IGNORECASE)
 # 레벨 정렬 우선순위 — 에러·경고 패턴을 먼저 보여준다
 _LEVEL_ORDER = {"FATAL": 0, "CRITICAL": 0, "ERROR": 0, "WARN": 1, "WARNING": 1}
 
@@ -233,8 +233,8 @@ def compress_metrics(items: list[ModalityItem], trigger_time: str) -> str:
 
 # ------------------------------------------------------------- trace 집계
 
-_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(us|µs|ms|s)\b", re.I)
-_TRACE_ERR_RE = re.compile(r"\b(ERROR|TIMEOUT|FAIL\w*|5\d{2})\b", re.I)
+_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(us|µs|ms|s)\b", re.IGNORECASE)
+_TRACE_ERR_RE = re.compile(r"\b(ERROR|TIMEOUT|FAIL\w*|5\d{2})\b", re.IGNORECASE)
 _EXEMPLAR_LIMIT = 3
 
 
@@ -252,9 +252,7 @@ def _span_fields(item: ModalityItem) -> tuple[str, float | None, bool]:
         )
         if (v := d.get("duration_us")) is not None:
             duration_ms = float(v) / 1000
-        elif (v := d.get("duration_ms")) is not None:
-            duration_ms = float(v)
-        elif (v := d.get("duration")) is not None:
+        elif (v := d.get("duration_ms")) is not None or (v := d.get("duration")) is not None:
             duration_ms = float(v)
         status = str(d.get("status") or d.get("http_status_code") or "")
         is_err = bool(_TRACE_ERR_RE.search(status))
