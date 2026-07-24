@@ -17,20 +17,46 @@ Spring 계약은 **camelCase**로 통일 — 페이로드 전체를 by_alias=Tru
       (1) signal_selector — 모달리티별 상한 이내로 선별(원본 전량은 Spring DB 한계 초과)
       (2) raw_normalizer  — raw를 모달리티별 JSON으로 정규화
     Spring이 DB 저장 후 조회 시 역직렬화해 evidence 배열을 채움.
+  - 모든 시각 필드는 Spring이 받는 형식(오프셋 포함 ISO)으로 맞춰 보냄 — _to_spring_ts
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import timezone
 
 import httpx
 
 from app.core.config import settings
 from app.schemas.contracts import IngestBundle, RcaResult
+from app.services.bundle_compression import parse_ts
 from app.services.raw_normalizer import normalize_payload_signals
 from app.services.signal_selector import PAYLOAD_KEYS, Selection, select_signals
 
 logger = logging.getLogger(__name__)
+
+
+def _to_spring_ts(value: str) -> str:
+    """시각을 Spring이 받는 형식(오프셋 포함 ISO)으로 맞춘다 — `2026-07-24T02:33:23Z`.
+
+    Spring이 허용하는 형식은 두 가지다.
+      - 오프셋 포함 ISO : 2026-07-24T02:33:23Z / 2026-07-24T11:33:23+09:00
+      - 공백형          : 2026-07-24 02:33:23 / 2026-07-24 02:33:23.209
+    SDK가 보내는 값은 `2026-07-24T02:33:23.209880`(T 구분자·오프셋 없음)이라 둘 중
+    어느 쪽도 아니다. 형식 위반은 Spring에서 422이므로 전송 직전에 맞춰준다.
+
+    tz 없는 값은 UTC로 간주한다. SDK는 컨테이너 로그 시각을 변환 없이 그대로 싣고
+    컨테이너가 UTC로 도는 것을 실측 확인했다(번들 윈도 끝 04:43:45 = 수집 시각 13:43 KST).
+    이미 오프셋이 있는 값은 UTC로 환산하므로 시각 자체는 바뀌지 않는다.
+
+    파싱 불가한 값은 원문 그대로 둔다 — 뜻을 모르는 문자열을 임의로 바꾸는 편이 더 위험하다.
+    """
+    dt = parse_ts(value)
+    if dt is None:
+        return value
+    dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+    text = dt.isoformat(timespec="microseconds" if dt.microsecond else "seconds")
+    return text.replace("+00:00", "Z")
 
 
 class SpringClient:
@@ -59,6 +85,37 @@ class SpringClient:
                 ),
             )
         return selections
+
+    @staticmethod
+    def _normalize_timestamps(payload: dict) -> None:
+        """페이로드의 모든 시각 필드를 Spring 형식으로 맞춘다(in-place).
+
+        선별 뒤에 부르므로 남은 항목만 손댄다. 대상은 window·triggerTime·3종 배열의
+        timestamp, 그리고 modalityInfo 구간의 start/end까지 — 한 페이로드 안에서
+        형식이 갈리면 받는 쪽이 파서를 두 벌 두어야 한다.
+        """
+        window = payload.get("window")
+        if isinstance(window, dict):
+            for key in ("start", "end"):
+                if isinstance(window.get(key), str):
+                    window[key] = _to_spring_ts(window[key])
+
+        trigger = payload.get("triggerInfo")
+        if isinstance(trigger, dict) and isinstance(trigger.get("triggerTime"), str):
+            trigger["triggerTime"] = _to_spring_ts(trigger["triggerTime"])
+
+        for array_key in PAYLOAD_KEYS:
+            for item in payload.get(array_key) or []:
+                if isinstance(item.get("timestamp"), str):
+                    item["timestamp"] = _to_spring_ts(item["timestamp"])
+
+        modality_info = payload.get("modalityInfo")
+        if isinstance(modality_info, dict):
+            for detail in modality_info.values():
+                for interval in (detail or {}).get("intervals") or []:
+                    for key in ("start", "end"):
+                        if isinstance(interval.get(key), str):
+                            interval[key] = _to_spring_ts(interval[key])
 
     @staticmethod
     def _annotate_sources(payload: dict, selections: dict[str, Selection]) -> None:
@@ -99,6 +156,7 @@ class SpringClient:
             payload, bundle.trigger_info.trigger_time, job_id
         )
         SpringClient._annotate_sources(payload, selections)
+        SpringClient._normalize_timestamps(payload)
         normalize_payload_signals(payload)
         return payload
 
@@ -116,6 +174,7 @@ class SpringClient:
             "reason": reason,
         }
         SpringClient._apply_selection(payload, bundle.trigger_info.trigger_time, job_id)
+        SpringClient._normalize_timestamps(payload)
         normalize_payload_signals(payload)
         return payload
 

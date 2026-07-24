@@ -194,6 +194,98 @@ def test_failure_payload_also_caps_signals(monkeypatch):
     assert "result" not in payload  # 고지할 자리가 없음
 
 
+# ------------------------------------------------------- 시각 형식 정합
+
+
+def test_naive_timestamp_gets_utc_marker():
+    """SDK는 tz 없는 값을 보내는데 Spring 허용 형식이 아니라 422가 된다 — Z를 붙여 맞춘다."""
+    bundle = IngestBundle(
+        window={"start": "2026-07-24T02:33:23", "end": "2026-07-24T02:39:23.209880"},
+        trigger_info={"trigger_time": "2026-07-24T02:36:23", "triggered_by": ["log"]},
+        logs=[{"timestamp": "2026-07-24T02:34:10.20988", "service": "api", "raw": "ERROR x"}],
+    )
+    payload = SpringClient._result_payload(bundle, _result())
+
+    assert payload["window"]["start"] == "2026-07-24T02:33:23Z"
+    assert payload["window"]["end"] == "2026-07-24T02:39:23.209880Z"
+    assert payload["triggerInfo"]["triggerTime"] == "2026-07-24T02:36:23Z"
+    assert payload["logs"][0]["timestamp"] == "2026-07-24T02:34:10.209880Z"
+
+
+def test_offset_timestamp_is_converted_to_utc():
+    """오프셋이 이미 붙어 온 값은 UTC로 환산 — 가리키는 시각은 그대로."""
+    bundle = IngestBundle(
+        window={"start": "2026-07-24T11:33:23+09:00", "end": "2026-07-24T11:39:23+09:00"},
+        trigger_info={"trigger_time": "2026-07-24T11:36:23+09:00", "triggered_by": ["log"]},
+    )
+    payload = SpringClient._result_payload(bundle, _result())
+
+    assert payload["window"]["start"] == "2026-07-24T02:33:23Z"
+    assert payload["triggerInfo"]["triggerTime"] == "2026-07-24T02:36:23Z"
+
+
+def test_already_utc_timestamp_is_unchanged():
+    """이미 Z가 붙은 값은 건드리지 않는다 — 멱등이라 재전송해도 같은 문자열."""
+    payload = SpringClient._result_payload(_bundle(), _result())
+
+    assert payload["window"]["start"] == "2026-01-15T10:00:00Z"
+    assert payload["triggerInfo"]["triggerTime"] == "2026-01-15T10:01:30Z"
+
+
+def test_unparsable_timestamp_is_left_as_is():
+    """뜻을 모르는 문자열을 임의로 바꾸는 편이 더 위험하므로 원문을 유지한다."""
+    from app.services.spring_client import _to_spring_ts
+
+    assert _to_spring_ts("형식을 알 수 없는 값") == "형식을 알 수 없는 값"
+
+
+def test_modality_interval_times_are_normalized():
+    """한 페이로드 안에서 형식이 갈리면 받는 쪽이 파서를 두 벌 두어야 한다."""
+    bundle = IngestBundle.model_validate(
+        {
+            "window": {"start": "2026-07-24T02:33:23", "end": "2026-07-24T02:39:23"},
+            "triggerInfo": {"triggerTime": "2026-07-24T02:36:23"},
+            "modalityInfo": {
+                "log": {
+                    "intervals": [
+                        {
+                            "fileName": "UserService_.log",
+                            "start": "2026-07-24T02:33:23",
+                            "end": "2026-07-24T02:36:23.500000",
+                        }
+                    ]
+                }
+            },
+        }
+    )
+    payload = SpringClient._result_payload(bundle, _result())
+    interval = payload["modalityInfo"]["log"]["intervals"][0]
+
+    assert interval["start"] == "2026-07-24T02:33:23Z"
+    assert interval["end"] == "2026-07-24T02:36:23.500000Z"
+
+
+def test_failure_payload_also_normalizes_timestamps():
+    """실패 리포트도 같은 계약으로 저장되므로 형식을 동일하게 맞춘다."""
+    bundle = IngestBundle(
+        window={"start": "2026-07-24T02:33:23", "end": "2026-07-24T02:39:23"},
+        trigger_info={"trigger_time": "2026-07-24T02:36:23", "triggered_by": ["log"]},
+        logs=[{"timestamp": "2026-07-24T02:34:10", "service": "api", "raw": "ERROR x"}],
+    )
+    payload = SpringClient._failure_payload(bundle, "boom")
+
+    assert payload["triggerInfo"]["triggerTime"] == "2026-07-24T02:36:23Z"
+    assert payload["logs"][0]["timestamp"] == "2026-07-24T02:34:10Z"
+
+
+def test_normalization_is_idempotent():
+    """두 번 정규화해도 값이 흔들리지 않아야 멱등키(triggerTime)가 안정적이다."""
+    from app.services.spring_client import _to_spring_ts
+
+    once = _to_spring_ts("2026-07-24T02:33:23.209880")
+    assert _to_spring_ts(once) == once
+
+
 def test_bundle_accepts_camelcase_company_code():
     """SDK가 보내는 camelCase(companyCode) 입력을 수용하고, by_alias로 다시 camelCase 출력."""
     bundle = IngestBundle.model_validate(

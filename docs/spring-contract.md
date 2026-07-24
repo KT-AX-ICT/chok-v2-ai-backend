@@ -96,6 +96,9 @@ Response 201
 - `result`는 Spring이 검증하지 않는 JSON 패스스루 — 내부 구조 정합성은 AI 백엔드 책임.
 - `window`는 optional(null 허용). `triggerInfo.triggerTime`은 필수(멱등키 원천).
 - `companyCode`는 기업 식별 코드 — SDK 번들 최상위로 수신, FastAPI가 그대로 전달(패스스루). 미전송 시 기본값 `SN001`.
+- **모든 시각 필드는 오프셋 포함 ISO(`2026-07-24T02:33:23Z`)로 전송** — `window`·`triggerInfo.triggerTime`·3종 `timestamp`·`modalityInfo` 구간 전부 동일.
+    - SDK는 tz 없는 값(`2026-07-24T02:33:23.209880`)을 보내며 이는 Spring 허용 형식이 아니므로, FastAPI가 전송 직전에 UTC 기준 `Z` 형식으로 맞춘다.
+    - tz 없는 값은 UTC로 간주 — SDK가 컨테이너 로그 시각을 변환 없이 싣고 컨테이너가 UTC로 도는 것을 실측 확인함. 오프셋이 붙어 온 값은 UTC로 환산하므로 가리키는 시각은 바뀌지 않는다.
 - 원본 3종 `raw`는 FastAPI가 모달리티별 JSON으로 정규화해 전송 — log `{level,msg}` · trace `{traceId,from,to,duration,status}` · metric `{label,value,threshold,exceeded}`.
     - 파싱 불가 필드는 키를 남기고 값만 비움(`""`). log 전체 실패 시 원문 한 줄을 `msg`에 통째로 넣음.
     - 핵심 필드(가능하면 반드시 채움): log=`msg`, trace=`status`, metric=`label`+`value`.
