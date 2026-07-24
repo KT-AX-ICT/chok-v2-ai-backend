@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     mysql_db: str = "chok_ai"
 
     spring_base_url: str = "http://localhost:8080"
+    # Spring 전송 시 모달리티별 항목 상한. Spring은 같은 MySQL을 쓰므로 원본 전량을 실으면
+    # max_allowed_packet을 넘긴다(로그 30만 줄 관측). 진단 가치 우선으로 선별해 이 수만 보낸다
+    # (signal_selector). 이 배열이 화면 evidence 행의 원천이라, 과하게 줄이면 근거가 빈약해진다.
+    spring_signal_limit: int = 200
 
     # 로그 레벨 (DEBUG/INFO/WARNING/ERROR). 중앙 로깅 설정(core.logging_config)에서 사용.
     log_level: str = "INFO"
