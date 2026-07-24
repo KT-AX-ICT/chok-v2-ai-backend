@@ -61,7 +61,7 @@ def build_user_message(modality: Modality, parsed: dict) -> str:
         f"- 윈도: {parsed['window_start']} ~ {parsed['window_end']}\n"
         f"- 트리거 시각: {parsed['trigger_time']}\n"
         f"- 트리거 모달리티: {', '.join(parsed['triggered_by']) or '(없음)'}\n"
-        f"\n## 수집 구간 상태\n{parsed[intervals_key]}\n"
+        f"\n## 수집 구간 상태 (참고)\n{parsed[intervals_key]}\n"
         f"\n## 데이터 (압축 표현)\n{data}"
     )
 

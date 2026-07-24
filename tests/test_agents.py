@@ -6,7 +6,7 @@ from app.agents.modality_agents import build_user_message, make_modality_agent
 from app.agents.router import build_router_message, route_with_guardrails
 from app.agents.schemas import RouteDecision
 from app.core.config import settings
-from app.schemas.contracts import IngestBundle
+from app.schemas.contracts import IngestBundle, ModalityInterval
 
 
 def _bundle(triggered_by=("log",), logs=True) -> IngestBundle:
@@ -63,6 +63,27 @@ def test_router_message_is_metadata_only():
     assert "log=1" in msg  # 건수
     assert "ERROR timeout" not in msg  # raw 미포함
     assert "2026-01-15T10:01:30Z" in msg  # 트리거 시각
+
+
+def test_router_message_shows_received_vs_original():
+    """받은 건수는 우리가 세고, 원본 건수는 SDK totalCount 합으로 병기한다."""
+    bundle = _bundle()
+    bundle.modality_info.log.intervals = [
+        ModalityInterval(fileName="a.log", status="data", record_count=1, total_count=12),
+        ModalityInterval(fileName="b.log", status="data", record_count=0, total_count=8),
+    ]
+    msg = build_router_message(bundle)
+
+    # 12+8=20이 원본, 받은 건수 1은 실제 배열 길이. totalCount 없는 모달리티는 병기 없음.
+    assert "건수: log=1 (원본 20 중 수집), metric=0, trace=0" in msg
+
+
+def test_router_message_includes_filename_in_intervals():
+    bundle = _bundle()
+    bundle.modality_info.log.intervals = [
+        ModalityInterval(fileName="UserService_.log", status="missing")
+    ]
+    assert "UserService_.log" in build_router_message(bundle)
 
 
 # --------------------------------------------------- 모달리티 에이전트 배선
