@@ -36,6 +36,15 @@
 - **희귀 라인** — 저빈도 패턴은 자기 클러스터로 남아 원문 샘플이 보존됨. 압축 대상이 아니라 부각 대상.
 - **효과** — 30만 줄 → N개 패턴 줄. 동일 에러 200건은 `×200` 1줄로 축약되며 정보 손실 없음.
 
+**예시** — 동일 ERROR 200건 + INFO 3건 + FATAL 1건(총 204건) → 3패턴:
+```
+# 로그 패턴 dedup (204건 → 3패턴) — 서비스<TAB>레벨<TAB>횟수<TAB>최초~최후<TAB>샘플 원문
+user-service	ERROR	×200	10:00:00~10:03:19	[2026-01-15 10:00:00] ERROR Failed to connect media-service-client (attempt 0)
+media-service	FATAL	×1	10:02:30	FATAL OutOfMemory: heap exhausted
+nginx	INFO	×3	10:02:00~10:02:02	INFO request req_id=abc0 completed
+```
+대량 반복(`×200`)은 1줄로 접히고, 1건뿐인 `FATAL`이 묻히지 않고 드러남.
+
 ## 2. metric — `compress_metrics` (통계 + 이상점)
 
 **방식**: `metric_pairs`로 `(라벨, 값)`을 뽑아 `(서비스, 라벨)` 시리즈로 묶고, **트리거 시각 기준 baseline/incident**로 나눠 통계를 낸다.
@@ -47,6 +56,13 @@
 - **미파싱 폴백** — 파싱 불가 항목은 버리지 않고 `[시각] 원문`으로 말미에 통과. 손실보다 안전 우선.
 - **효과** — 시계열 나열 제거, LLM 없이 결정적 산출. 서비스별 시리즈로 범인 후보를 좁힘.
 
+**예시** — CPU가 baseline 2%에서 트리거 이후 80%대로 급변(25건) → 1줄:
+```
+# 메트릭 시리즈 통계 — 서비스<TAB>라벨<TAB>baseline(트리거 이전)<TAB>incident(이후)<TAB>이상점
+media-service	cpu	base n=20 mean=2 min=2 max=2	incid n=5 mean=82 min=80 max=84	onset=80@10:02:00 peak=84@10:02:04
+```
+전 구간 나열 없이 baseline·incident 통계와 이탈 시작(`onset`)·정점(`peak`)만 남음.
+
 ## 3. trace — `compress_traces` (집계 + exemplar)
 
 **방식**: `span_fields`로 `(오퍼레이션, 지연ms, 에러여부)`를 뽑아 `(서비스, 오퍼레이션)`별로 집계한다.
@@ -56,6 +72,19 @@
 - **볼륨 타임라인** — 서비스별 분단위(`HH:MM`) 스팬 수. **급감·소실 구간이 구조적 장애 신호**(kill 계열은 5xx가 아니라 스팬 소실로 드러남).
 - **exemplar** — 가장 느린 스팬 상위 3 + 에러 스팬 상위 3(중복 제거)의 **원문 전체**를 `[시각] 서비스 원문`으로 첨부.
 - **주의 — 압축과 판정의 분리** — 이 룰베이스는 raw→구조화 표까지만. "media-service가 사라졌으니 원인"이라는 **해석은 trace 심층 에이전트의 몫**. 단순 5xx 필터로는 범인을 못 짚음.
+
+**예시** — 정상 스팬 100건 + 느린/에러 스팬 3건(총 103건):
+```
+# 트레이스 구간 집계 — 서비스<TAB>오퍼레이션<TAB>호출<TAB>에러<TAB>p50/p95/max(ms)
+compose-post	/api/compose	×3	err=3	1.6e+04/1.6e+04/1.6e+04
+nginx	/api/list	×100	err=0	1.2/1.2/1.2
+# 서비스별 볼륨 타임라인(분) — 급감·소실 구간이 구조적 장애 신호
+compose-post	10:02=3
+nginx	10:00=100
+# exemplar 원문(가장 느린/에러 스팬) — [시각] 서비스 원문
+[10:02:00] compose-post {"operation": "/api/compose", "duration_us": 16000000, "http_status_code": 500}
+```
+집계표로 에러 오퍼레이션(`err=3`)이 위로, 볼륨 타임라인으로 시간대 분포가, exemplar로 대표 원문이 남음.
 
 ## 정답 유출 방지 (D-020/D-021)
 
