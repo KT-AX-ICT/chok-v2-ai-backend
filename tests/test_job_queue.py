@@ -271,6 +271,62 @@ async def test_signals_file_kept_when_delivery_fails(factory, monkeypatch):
     assert (bundle_store.storage_dir() / name).exists()  # 재전송용으로 보존
 
 
+async def test_permanent_delivery_failure_marks_failed_and_discards_file(factory, monkeypatch):
+    """영구 실패(4xx)는 재시도해도 소용없으므로 FAILED 확정하고 원본 파일을 회수한다."""
+    import app.services.spring_client as spring_mod
+    from app.services import bundle_store
+
+    async def _boom(*args, **kwargs):
+        raise spring_mod.DeliveryPermanentError(422, "invalid payload")
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _boom)
+
+    light, name = await bundle_store.split_and_save(_make_bundle().model_dump())
+    async with factory() as db:
+        job = IngestJob(status="PENDING", bundle=light, signals_path=name)
+        db.add(job)
+        await db.commit()
+        await db.refresh(job)
+        job_id = job.job_id
+
+    async def runner(job_id: int, bundle: IngestBundle) -> RcaResult:
+        return _valid_result()
+
+    q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
+    q.start()
+    await q.enqueue(job_id)
+    await q.stop()
+
+    async with factory() as db:
+        job = (
+            await db.execute(select(IngestJob).where(IngestJob.job_id == job_id))
+        ).scalar_one()
+    assert job.status == "FAILED"
+    assert "422" in job.error
+    assert not (bundle_store.storage_dir() / name).exists()  # 재시도 안 하므로 회수
+
+
+async def test_409_delivery_treated_as_success(factory, monkeypatch):
+    """409(멱등키 중복)는 spring_client가 이미 성공으로 흡수 — job_queue는 DONE으로 확정."""
+    import app.services.spring_client as spring_mod
+
+    async def _ok(*args, **kwargs):  # spring_client._post가 409를 성공 취급하므로 예외 없음
+        return None
+
+    monkeypatch.setattr(spring_mod.spring_client, "save_result", _ok)
+
+    async def runner(job_id: int, bundle: IngestBundle) -> RcaResult:
+        return _valid_result()
+
+    q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
+    q.start()
+    job_id = await _seed_job(factory)
+    await q.enqueue(job_id)
+    await q.stop()
+
+    assert await _status(factory, job_id) == "DONE"
+
+
 async def test_concurrency_cap_limits_parallelism(factory):
     active = 0
     peak = 0
