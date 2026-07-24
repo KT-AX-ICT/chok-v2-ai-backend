@@ -24,6 +24,10 @@ dev = [
     "aiosqlite>=0.20.0",
 ]
 
+[tool.ruff.lint]
+# FastAPI 라우트 인자 기본값의 Depends()는 프레임워크 관용 패턴 → B008 비활성
+ignore = ["B008"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 

@@ -28,8 +28,8 @@ import logging
 import os
 import time
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from app.core.config import settings
 from app.schemas.contracts import IngestBundle

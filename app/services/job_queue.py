@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 
@@ -129,7 +129,7 @@ class RcaJobQueue:
                 if raw is None:
                     return None
                 return validate_rca_result(raw)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - 재시도·실패기록 위해 모든 예외 포괄
                 last_exc = exc
                 logger.warning("job %s RCA 시도 %d/2 실패: %s", job_id, attempt, exc)
         assert last_exc is not None

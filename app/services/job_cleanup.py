@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Callable
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select
 
@@ -31,7 +31,7 @@ ACTIVE_STATUSES = ("PENDING", "RUNNING", "DELIVERING")
 
 def _utc_naive_now() -> datetime:
     # DB의 func.now()가 naive UTC(SQLite) 문자열이므로 비교 기준도 naive UTC로 맞춘다.
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class JobCleaner:

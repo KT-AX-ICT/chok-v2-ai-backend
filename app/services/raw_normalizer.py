@@ -87,7 +87,7 @@ def _s(v) -> str:
 
 # ---------------------------------------------------------------- log
 
-_LEVEL_RE = re.compile(r"\b(FATAL|CRITICAL|ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE)\b", re.I)
+_LEVEL_RE = re.compile(r"\b(FATAL|CRITICAL|ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE)\b", re.IGNORECASE)
 _LOG_LEVEL_KEYS = ("level", "severity", "lvl", "levelname")
 _LOG_MSG_KEYS = ("msg", "message", "log", "text")
 
@@ -157,8 +157,8 @@ _TRACE_ID_KEYS = ("traceId", "trace_id", "traceID", "tid")
 _TRACE_FROM_KEYS = ("from", "caller", "source", "client", "parent")
 _TRACE_TO_KEYS = ("to", "callee", "operation", "operationName", "name", "target")
 _TRACE_STATUS_KEYS = ("status", "http_status_code", "statusCode", "code")
-_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(us|µs|ms|s)\b", re.I)
-_TRACE_ERR_RE = re.compile(r"\b(ERROR|TIMEOUT|FAIL\w*|5\d{2})\b", re.I)
+_DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(us|µs|ms|s)\b", re.IGNORECASE)
+_TRACE_ERR_RE = re.compile(r"\b(ERROR|TIMEOUT|FAIL\w*|5\d{2})\b", re.IGNORECASE)
 _DUR_UNIT_MS = {"us": 1e-3, "µs": 1e-3, "ms": 1.0, "s": 1e3}
 
 
