@@ -232,11 +232,17 @@ def test_already_utc_timestamp_is_unchanged():
     assert payload["triggerInfo"]["triggerTime"] == "2026-01-15T10:01:30Z"
 
 
-def test_unparsable_timestamp_is_left_as_is():
-    """뜻을 모르는 문자열을 임의로 바꾸는 편이 더 위험하므로 원문을 유지한다."""
+def test_unparsable_timestamp_raises():
+    """도달 불가 지점 — /ingest와 restore가 Iso8601로 두 번 거르므로 여기 못 온다.
+
+    그래도 왔다면 검증 가정이 깨진 것이라 조용히 흘리지 않고 터뜨린다.
+    """
+    import pytest
+
     from app.services.spring_client import _to_spring_ts
 
-    assert _to_spring_ts("형식을 알 수 없는 값") == "형식을 알 수 없는 값"
+    with pytest.raises(ValueError):
+        _to_spring_ts("형식을 알 수 없는 값")
 
 
 def test_modality_interval_times_are_normalized():

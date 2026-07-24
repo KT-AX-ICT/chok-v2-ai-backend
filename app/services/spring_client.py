@@ -49,11 +49,14 @@ def _to_spring_ts(value: str) -> str:
     컨테이너가 UTC로 도는 것을 실측 확인했다(번들 윈도 끝 04:43:45 = 수집 시각 13:43 KST).
     이미 오프셋이 있는 값은 UTC로 환산하므로 시각 자체는 바뀌지 않는다.
 
-    파싱 불가한 값은 원문 그대로 둔다 — 뜻을 모르는 문자열을 임의로 바꾸는 편이 더 위험하다.
+    파싱 불가한 값은 여기 도달할 수 없다 — 시각 필드는 /ingest에서 한 번, 꺼낼 때
+    restore_bundle의 model_validate에서 한 번, Iso8601로 두 번 검증되고 parse_ts는
+    Iso8601을 전부 파싱한다. 이중 검증을 뚫고 온다면 코드 가정이 깨진 것이므로
+    조용히 흘리지 않고 ValueError로 터뜨린다.
     """
     dt = parse_ts(value)
     if dt is None:
-        return value
+        raise ValueError(f"시각 파싱 실패 — 검증을 우회한 값: {value!r}")
     dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
     text = dt.isoformat(timespec="microseconds" if dt.microsecond else "seconds")
     return text.replace("+00:00", "Z")
