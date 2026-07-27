@@ -49,8 +49,12 @@ class DeliveryReconciler:
         self._task: asyncio.Task | None = None
 
     async def redeliver_once(self) -> int:
-        """grace보다 오래 DELIVERING인 job을 재전송. DONE으로 확정한 건수 반환."""
-        from app.services.spring_client import spring_client
+        """grace보다 오래 DELIVERING인 job을 재전송. DONE으로 확정한 건수 반환.
+
+        영구 실패(4xx, 409 제외)는 재시도해도 소용없으므로 FAILED로 확정하고
+        원본 파일을 회수한다. 일시 실패(5xx·네트워크)는 다음 주기에 다시 시도한다.
+        """
+        from app.services.spring_client import DeliveryPermanentError, spring_client
 
         cutoff = _utc_naive_now() - self._grace
         async with self._session_factory() as db:
@@ -75,6 +79,11 @@ class DeliveryReconciler:
                 bundle = await self._restore(job_id, raw_bundle, signals_path)
                 result = RcaResult.model_validate(raw_result)
                 await spring_client.save_result(job_id, bundle, result)
+            except DeliveryPermanentError as exc:
+                logger.error("job %s 영구 실패 — FAILED 확정: %s", job_id, exc)
+                if await self._mark_failed(job_id, str(exc)):
+                    await bundle_store.discard(signals_path)  # 재시도 중단, 파일 회수
+                continue
             except Exception:
                 logger.warning("job %s 재전송 실패 — 다음 주기 재시도", job_id, exc_info=True)
                 continue
@@ -109,6 +118,21 @@ class DeliveryReconciler:
             job.status = "DONE"
             await db.commit()
         logger.info("job %s 재전송 성공 → DONE", job_id)
+        return True
+
+    async def _mark_failed(self, job_id: int, reason: str) -> bool:
+        """전송 영구 실패한 job을 FAILED로. DELIVERING인 것만 전이(중복 방지)."""
+        async with self._session_factory() as db:
+            row = await db.execute(
+                select(IngestJob).where(IngestJob.job_id == job_id)
+            )
+            job = row.scalar_one_or_none()
+            if job is None or job.status != "DELIVERING":
+                return False
+            job.status = "FAILED"
+            job.error = reason
+            await db.commit()
+        logger.error("job %s 재전송 영구 실패 → FAILED", job_id)
         return True
 
     def start(self) -> None:

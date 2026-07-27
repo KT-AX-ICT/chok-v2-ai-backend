@@ -49,10 +49,9 @@ class Settings(BaseSettings):
     # 값 선정 — 임계가 짧으면 정상 처리 중인 job을 중단으로 오인해 회수하고(RUNNING 전이 후에는
     # 행을 갱신하지 않아 updated_at만으로 진행 여부를 구분할 수 없다), 길면 진짜 멈춘 job의 발견이
     # 늦어진다. 늦은 발견은 지연에 그치지만 오인 회수는 끝나가던 분석을 버리므로 긴 쪽을 택했다.
-    # 30분은 계산된 상한이 아니라 보수적 운영값이다 — LLM 호출에 요청 타임아웃이 없어
-    # (agents/llm.py의 make_llm) 최악 소요를 코드로 한정할 수 없기 때문. LLM 요청 타임아웃을
-    # 두거나 실제 RCA 소요 분포를 측정하면 그 값에서 역산해 줄일 수 있다.
-    stuck_job_after_seconds: int = 1800
+    # 이제는 역산 가능한 상한이 있다 — RCA 1회 실행은 rca_overall_timeout_seconds(600s)로
+    # 캡되고, _run_rca가 최대 2회 재시도하므로 최악 1200s. 여기에 여유 300s를 더한 값(25분).
+    stuck_job_after_seconds: int = 1500
     stuck_job_interval_seconds: int = 300
     # 중단 job의 큐 재투입 허용 횟수. 넘기면 FAILED로 확정한다(무한 재투입·크래시 루프 방지).
     max_job_requeue: int = 1
@@ -69,6 +68,15 @@ class Settings(BaseSettings):
     openai_max_retries: int = 3
     # 모달리티 입력 절단 상한(문자 수). 압축 후에도 초과 시 최후 방어선.
     openai_max_input_chars: int = 120_000
+
+    # LLM 요청별 timeout(초) — effort 등급별. 죽은 연결 조기 포기용.
+    # 총량 보장은 rca_overall_timeout_seconds가 담당(질문별 값 × SDK 재시도만큼 늘 수 있음).
+    llm_timeout_low_seconds: int = 60  # router · scan
+    llm_timeout_medium_seconds: int = 180  # 모달리티 deep
+    llm_timeout_high_seconds: int = 300  # report
+
+    # RCA 1회 실행 전체 벽시계 캡(초). asyncio.wait_for로 orchestrator.run을 감쌈.
+    rca_overall_timeout_seconds: int = 600
 
     @property
     def async_db_url(self) -> str:

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── 1) 테스트: uv로 pytest (SQLite in-memory, 외부 DB·실 OpenAI 호출 없음) ──
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # 앱 import 시 OPENAI 키를 요구해서 더미값 주입. 테스트는 SQLite in-memory라 실호출 없음.
+      OPENAI_API_KEY: sk-test-dummy
+    steps:
+      - uses: actions/checkout@v4
+      - name: uv 설치(+캐시)
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: 의존성 설치(test extra 포함)
+        run: uv sync --frozen --extra dev
+      - name: 테스트(pytest)
+        run: uv run pytest -v
+
+  # ── 2) 빌드: main push일 때만 → 이미지 빌드 → GHCR push → deploy에 digest PR 자동생성 ──
+  build:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: KT-AX-ICT/chok-v2-deploy/.github/workflows/reusable-docker-build.yml@main
+    with:
+      image_name: chok-v2-ai-backend
+      service_key: fastapi
+    secrets:
+      DEPLOY_BOT_APP_ID: ${{ secrets.DEPLOY_BOT_APP_ID }}
+      DEPLOY_BOT_PRIVATE_KEY: ${{ secrets.DEPLOY_BOT_PRIVATE_KEY }}

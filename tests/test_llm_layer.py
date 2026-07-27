@@ -13,6 +13,13 @@ def test_make_llm_applies_model_effort_retries():
     assert llm.max_retries == 3  # settings.openai_max_retries 기본값
 
 
+def test_make_llm_applies_effort_timeout():
+    # effort 등급별 요청 timeout(초) — 죽은 연결 조기 포기용(settings 기본값 기준).
+    assert make_llm("m", "low").request_timeout == 60
+    assert make_llm("m", "medium").request_timeout == 180
+    assert make_llm("m", "high").request_timeout == 300
+
+
 def test_llm_limit_is_singleton_with_configured_capacity(monkeypatch):
     monkeypatch.setattr(llm_mod, "_semaphore", None)  # 지연 초기화 리셋
     sem = llm_limit()

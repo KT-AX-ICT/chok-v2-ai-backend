@@ -24,16 +24,28 @@ Effort = Literal["low", "medium", "high"]
 TRUNCATION_NOTICE = "[... 입력 상한 초과로 이 지점의 데이터가 절단됨 ...]"
 
 
+def _timeout_for(effort: Effort) -> int:
+    """effort 등급별 요청 timeout(초) 조회."""
+    return {
+        "low": settings.llm_timeout_low_seconds,
+        "medium": settings.llm_timeout_medium_seconds,
+        "high": settings.llm_timeout_high_seconds,
+    }[effort]
+
+
 def make_llm(model: str, effort: Effort) -> ChatOpenAI:
     """역할별 ChatOpenAI 인스턴스 생성.
 
     max_retries: 429·일시 오류에 대한 SDK 내장 지수 백오프 재시도 횟수.
+    timeout: 죽은 연결을 조기에 포기시키는 요청별 상한. 전체 소요 총량 보장은
+        여기가 아니라 job_queue의 rca_overall_timeout_seconds가 담당한다.
     """
     return ChatOpenAI(
         model=model,
         api_key=settings.openai_api_key,
         reasoning_effort=effort,
         max_retries=settings.openai_max_retries,
+        timeout=_timeout_for(effort),
     )
 
 

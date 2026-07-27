@@ -2,6 +2,9 @@
 
 import json
 
+import httpx
+import pytest
+
 from app.schemas.contracts import (
     Actions,
     Affected,
@@ -16,7 +19,11 @@ from app.schemas.contracts import (
     Summary,
     TraceEvidence,
 )
-from app.services.spring_client import SpringClient
+from app.services.spring_client import (
+    DeliveryPermanentError,
+    DeliveryTransientError,
+    SpringClient,
+)
 
 
 def _bundle() -> IngestBundle:
@@ -303,3 +310,63 @@ def test_bundle_accepts_camelcase_company_code():
     )
     assert bundle.company_code == "SN099"
     assert bundle.model_dump(by_alias=True)["companyCode"] == "SN099"
+
+
+# ------------------------------------------------------- _post 상태코드 분류 (D2)
+
+
+def _fake_client_factory(monkeypatch, handler):
+    """httpx.AsyncClient를 MockTransport 기반으로 교체 — 실제 네트워크 없이 응답 목킹.
+
+    `httpx` 모듈 객체 자체를 패치하므로, factory 안에서는 패치 전 원본 클래스를
+    써야 한다(아니면 factory가 자기 자신을 재귀 호출하게 된다).
+    """
+    real_async_client = httpx.AsyncClient
+
+    def factory(*args, **kwargs):
+        return real_async_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr("app.services.spring_client.httpx.AsyncClient", factory)
+
+
+async def test_post_succeeds_on_2xx(monkeypatch):
+    _fake_client_factory(monkeypatch, lambda request: httpx.Response(200))
+    await SpringClient()._post({"a": 1})  # 예외 없이 반환하면 성공
+
+
+async def test_post_treats_409_as_success(monkeypatch):
+    """멱등키(triggerTime UNIQUE) 중복 — 첫 전송이 커밋 성공 후 응답만 유실된 경우.
+
+    이미 저장돼 있으므로 성공 취급해 무한 재시도를 막는다.
+    """
+    _fake_client_factory(monkeypatch, lambda request: httpx.Response(409, text="dup"))
+    await SpringClient()._post({"a": 1})  # 예외 없이 반환하면 성공 취급
+
+
+async def test_post_raises_permanent_error_on_4xx(monkeypatch):
+    _fake_client_factory(
+        monkeypatch, lambda request: httpx.Response(422, text="invalid payload")
+    )
+    with pytest.raises(DeliveryPermanentError) as exc_info:
+        await SpringClient()._post({"a": 1})
+    assert exc_info.value.status_code == 422
+    assert "invalid payload" in exc_info.value.body
+
+
+async def test_post_raises_transient_error_on_5xx(monkeypatch):
+    _fake_client_factory(monkeypatch, lambda request: httpx.Response(503, text="db down"))
+    with pytest.raises(DeliveryTransientError) as exc_info:
+        await SpringClient()._post({"a": 1})
+    assert exc_info.value.status_code == 503
+    assert "db down" in exc_info.value.body
+
+
+async def test_post_propagates_network_errors(monkeypatch):
+    """timeout/네트워크 오류는 분류하지 않고 그대로 전파 — 호출부가 일시 실패로 취급."""
+
+    def handler(request):
+        raise httpx.ConnectTimeout("연결 시간 초과", request=request)
+
+    _fake_client_factory(monkeypatch, handler)
+    with pytest.raises(httpx.ConnectTimeout):
+        await SpringClient()._post({"a": 1})

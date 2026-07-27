@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
@@ -121,17 +122,26 @@ class RcaJobQueue:
 
         runner가 None을 반환하면(산출물 없음) 검증 없이 None을 통과시킨다.
         최초+재시도 2회 모두 실패하면 마지막 예외를 던져 상위에서 FAILED 처리한다.
+        각 attempt는 rca_overall_timeout_seconds로 캡한다(asyncio.wait_for) — 타임아웃도
+        TimeoutError(Exception 하위)라 아래 except Exception 재시도 경로에 그대로 흡수된다.
         """
         last_exc: Exception | None = None
         for attempt in (1, 2):
+            started = time.monotonic()
             try:
-                raw = await self._runner(job_id, bundle)
+                raw = await asyncio.wait_for(
+                    self._runner(job_id, bundle),
+                    timeout=settings.rca_overall_timeout_seconds,
+                )
                 if raw is None:
                     return None
                 return validate_rca_result(raw)
             except Exception as exc:  # noqa: BLE001 - 재시도·실패기록 위해 모든 예외 포괄
                 last_exc = exc
                 logger.warning("job %s RCA 시도 %d/2 실패: %s", job_id, attempt, exc)
+            finally:
+                elapsed = time.monotonic() - started
+                logger.info("job %s RCA 시도 %d 소요 %.1fs", job_id, attempt, elapsed)
         assert last_exc is not None
         raise last_exc
 
@@ -210,14 +220,25 @@ class RcaJobQueue:
     async def _deliver_and_finalize(
         self, job_id: int, bundle: IngestBundle, result: object
     ) -> bool:
-        """Spring 전송 성공 시에만 DELIVERING → DONE. 실패하면 DELIVERING 유지(재전송 대기).
+        """Spring 전송 결과에 따라 최종 상태를 확정한다(D2).
 
-        전송 성공 여부를 반환한다 — 호출부가 원본 파일을 버려도 되는지 판단하는 근거.
+        성공(2xx·409)이면 DONE. 영구 실패(4xx, 409 제외)면 재시도해도 소용없으므로
+        FAILED로 확정한다. 일시 실패(5xx·네트워크)면 DELIVERING 유지 — 재전송
+        루프가 다시 민다.
+
+        반환값은 호출부가 원본 파일을 버려도 되는지 판단하는 근거다 —
+        True: 더 이상 재전송 안 함(성공 또는 영구 실패 확정), False: 파일 보존.
         """
-        from app.services.spring_client import spring_client
+        from app.services.spring_client import DeliveryPermanentError, spring_client
 
         try:
             await spring_client.save_result(job_id, bundle, result)
+        except DeliveryPermanentError as exc:
+            logger.error(
+                "job %s Spring 영구 실패(재시도 무의미) — FAILED 확정: %s", job_id, exc
+            )
+            await self._mark_failed(job_id, str(exc))
+            return True
         except Exception:
             logger.warning(
                 "Spring 결과 전송 실패 — DELIVERING 유지, 재전송 대기: job %s",
@@ -240,6 +261,20 @@ class RcaJobQueue:
             job.status = "DONE"
             await db.commit()
         logger.info("job %s 전송 완료 → DONE", job_id)
+
+    async def _mark_failed(self, job_id: int, reason: str) -> None:
+        """Spring 영구 실패한 job을 FAILED로 확정. DELIVERING인 것만 전이(중복 방지)."""
+        async with self._session_factory() as db:
+            result = await db.execute(
+                select(IngestJob).where(IngestJob.job_id == job_id)
+            )
+            job = result.scalar_one_or_none()
+            if job is None or job.status != "DELIVERING":
+                return
+            job.status = "FAILED"
+            job.error = reason
+            await db.commit()
+        logger.error("job %s Spring 전송 영구 실패 → FAILED", job_id)
 
     async def _deliver_failure(
         self, job_id: int, bundle: IngestBundle, error: str

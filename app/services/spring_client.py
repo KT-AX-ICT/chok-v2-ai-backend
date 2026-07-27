@@ -62,6 +62,28 @@ def _to_spring_ts(value: str) -> str:
     return text.replace("+00:00", "Z")
 
 
+class DeliveryError(Exception):
+    """Spring 전송 실패 기반 예외."""
+
+
+class DeliveryPermanentError(DeliveryError):
+    """재시도해도 소용없는 실패(4xx, 409 제외) — 페이로드 결함 등."""
+
+    def __init__(self, status_code: int, body: str) -> None:
+        super().__init__(f"Spring {status_code}: {body}")
+        self.status_code = status_code
+        self.body = body
+
+
+class DeliveryTransientError(DeliveryError):
+    """재시도로 회복 가능한 실패(5xx)."""
+
+    def __init__(self, status_code: int, body: str) -> None:
+        super().__init__(f"Spring {status_code}: {body}")
+        self.status_code = status_code
+        self.body = body
+
+
 class SpringClient:
     def __init__(self) -> None:
         self._base = settings.spring_base_url.rstrip("/")
@@ -184,13 +206,29 @@ class SpringClient:
     # ---------------------------------------------------------- 전송
 
     async def _post(self, payload: dict) -> None:
+        """상태코드를 성공/영구실패/일시실패로 분류한다(D2).
+
+        - 409: 멱등키(triggerTime UNIQUE) 중복 — 첫 전송이 Spring 커밋 성공 후
+          응답만 유실된 경우라 이미 저장돼 있다. 성공 취급해 무한 재시도를 막는다.
+        - 2xx: 성공.
+        - 400~499(409 제외): 페이로드 결함 등 재시도해도 소용없는 실패 — 영구.
+        - 그 외(5xx): 재시도로 회복 가능한 일시 실패.
+        네트워크/timeout(httpx 예외)은 여기서 잡지 않고 그대로 전파한다 — 호출부가
+        일시 실패로 취급(DELIVERING 유지, 재전송 루프가 재시도).
+        """
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(f"{self._base}/api/internal/reports", json=payload)
-            if resp.is_error:  # 4xx/5xx — 상태코드·본문을 남겨 원인 추적 가능하게
-                logger.warning(
-                    "Spring 응답 오류 %s: %s", resp.status_code, resp.text[:500]
-                )
-            resp.raise_for_status()
+            if resp.status_code == 409:
+                logger.info("Spring 409(멱등키 중복) — 이미 저장된 것으로 간주, 성공 취급")
+                return
+            if resp.is_success:
+                return
+            body = resp.text[:500]
+            if 400 <= resp.status_code < 500:
+                logger.error("Spring 응답 오류(영구) %s: %s", resp.status_code, body)
+                raise DeliveryPermanentError(resp.status_code, body)
+            logger.warning("Spring 응답 오류(일시) %s: %s", resp.status_code, body)
+            raise DeliveryTransientError(resp.status_code, body)
 
     async def save_result(
         self, job_id: int, bundle: IngestBundle, result: RcaResult
