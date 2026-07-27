@@ -4,18 +4,14 @@
 
 FastAPI 양방향 인증 코드는 완료됐으나 **인증은 꺼져 있다**(키/시크릿 미설정 시 통과하는 단계적 전환). 이 문서는 켜기까지 남은 작업 4건의 실행 절차다.
 
-| # | 대상 | 주체 | 형태 |
-|---|---|---|---|
-| 0 | PR 2건 머지 → 배포 | 리뷰어 | PR |
-| 1 | SDK `X-API-Key` 헤더 추가 | chok-v2-py-sdk | PR |
-| 2 | 배포 서버 `.env`에 키 설정 → 재기동 | 운영 | 서버 작업 |
-| 3 | Spring 필터 활성화 | chok-v2-spring-backend | PR |
+| # | 대상 | 주체 | 형태 | 담당자 |
+|---|---|---|---|---|
+| 0 | PR 2건 머지 → 배포 | chok-v2-ai-backend | PR | 이예지·박가희 |
+| 1 | SDK `X-API-Key` 헤더 추가 | chok-v2-py-sdk | PR | 이예지 |
+| 2 | 배포 서버 `.env`에 키 설정 → 재기동 | 운영 | 서버 작업 | 박가희 |
+| 3 | Spring 필터 활성화 | chok-v2-spring-backend | PR | 이석진 |
 
-## 순서 — 1이 2보다 먼저여야 한다
-
-**2를 먼저 하면 SDK 전송이 401로 전부 끊긴다.** SDK가 헤더를 붙인 뒤(1) 서버가 키를 요구해야(2) 끊김 구간이 없다. 그 사이 SDK가 보내는 헤더는 서버가 무시하므로 무해하다.
-
-3은 순서 제약이 없다 — 0이 배포되면 FastAPI가 `X-Internal-Secret`을 이미 보내고 있고(`INTERNAL_SHARED_SECRET` 값은 배포 `.env`에 이미 존재), Spring 필터는 꺼져 있어 무시된다. 0 이후 아무 때나 가능.
+## 작업 순서
 
 ```
 0 배포 ──┬─→ 1 SDK 헤더 ──→ 2 서버 키 설정 ──→ 인바운드 ON
@@ -31,8 +27,6 @@ FastAPI 양방향 인증 코드는 완료됐으나 **인증은 꺼져 있다**(�
 | [chok-v2-ai-backend#20](https://github.com/KT-AX-ICT/chok-v2-ai-backend/pull/20) | FastAPI 양방향 인증 코드 |
 | [chok-v2-deploy#13](https://github.com/KT-AX-ICT/chok-v2-deploy/pull/13) | `fastapi` 서비스에 env 2종 전달 |
 
-#20 머지 → CI가 이미지 빌드·GHCR push → **deploy 저장소에 digest PR 자동 생성**(`deploy/fastapi` 브랜치) → 그 PR도 머지해야 배포 반영. #13과 digest PR은 별개 브랜치라 충돌하지 않는다.
-
 배포 후 확인 — 기동 로그에 아래가 있으면 정상(아직 2를 안 했으므로):
 
 ```
@@ -45,7 +39,8 @@ INGEST_API_KEYS 미설정 — /ingest 무인증 공개 상태. 단계적 전환 
 
 **저장소:** `chok-v2-py-sdk`
 
-현재 [`src/rca_sdk/transport/client.py`](https://github.com/KT-AX-ICT/chok-v2-py-sdk)에 `# TODO: 재시도/백오프, 인증 — 서버팀과 미확정` 주석이 있다. 인증 부분이 이 작업으로 확정된다.
+현재 [`src/rca_sdk/transport/client.py`](https://github.com/KT-AX-ICT/chok-v2-py-sdk)에 `# TODO: 재시도/백오프, 인증 — 서버팀과 미확정` 주석이 있다.   
+인증 부분은 지금 작업으로 확정한다.
 
 ### 1-1. 설정 추가 — `src/rca_sdk/config.py`
 
@@ -107,7 +102,7 @@ SDK가 도는 호스트의 `.env`에 `RCA_API_KEY=<2에서 생성한 값>`. **2�
 
 ## 2. 배포 서버 — 키 설정
 
-### 2-1. 키 생성
+### 2-1. 키 생성 (생성완료, 별도 전달 예정)
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -123,7 +118,7 @@ INGEST_API_KEYS=<생성한 값>
 
 `INTERNAL_SHARED_SECRET`은 이미 설정돼 있으므로 건드리지 않는다.
 
-### 2-3. 재기동 → 확인
+### 2-3. 재기동 → 확인 (재기동 프로세스 따로 있으면 진행 X)
 
 ```bash
 docker compose up -d fastapi
@@ -142,11 +137,11 @@ curl -i http://<host>:8000/health
 
 422가 아니라 **401**이 나와야 한다 — 인증이 본문 검증보다 먼저 돈다는 뜻이다.
 
-### 2-4. 롤백
+### 2-4. 롤백 (필요 시)
 
 `.env`에서 `INGEST_API_KEYS` 값을 비우고 재기동하면 즉시 인증이 꺼진다. 코드 변경·재배포 불필요.
 
-### 2-5. 키 교체(필요 시)
+### 2-5. 키 교체 (필요 시)
 
 `INGEST_API_KEYS=old,new`로 배포 → SDK를 `new`로 갱신 → `new`만 남기고 재배포. 겹침 구간이 있어 무중단이다.
 
@@ -155,8 +150,6 @@ curl -i http://<host>:8000/health
 ## 3. Spring — 필터 활성화
 
 **저장소:** `chok-v2-spring-backend`
-
-> ⚠️ 로컬 클론이 `origin/main`보다 **20커밋 뒤처져 있다**(2026-07-27 확인). `SecurityConfig.java`가 그 커밋들에 포함되므로 **먼저 `git pull`** 할 것.
 
 **파일:** `src/main/java/com/choks/chokchok/config/SecurityConfig.java`
 
@@ -195,4 +188,5 @@ Spring 401 — X-Internal-Secret 불일치/미설정 의심. 전송 전량 실�
 
 ## 완료 후
 
-전환이 끝나면 인바운드를 **강제(fail-fast)**로 올리는 것을 검토한다 — `INGEST_API_KEYS` 미설정 시 기동 거부(현재 `OPENAI_API_KEY` 처리와 동일 패턴). 단계적 전환의 "설정 실수 = 무인증 공개" 위험이 그때 사라진다. 상세는 [설계 문서](ingest-api-key-auth-design.md) "향후".
+전환이 끝나면 인바운드를 **강제(fail-fast)**로 올리는 것을 검토한다 — `INGEST_API_KEYS` 미설정 시 기동 거부(현재 `OPENAI_API_KEY` 처리와 동일 패턴).   
+단계적 전환을 진행하고자 미설정시에도 허용하도록 해두었다.
