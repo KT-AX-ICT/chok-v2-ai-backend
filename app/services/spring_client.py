@@ -211,19 +211,36 @@ class SpringClient:
         - 409: 멱등키(triggerTime UNIQUE) 중복 — 첫 전송이 Spring 커밋 성공 후
           응답만 유실된 경우라 이미 저장돼 있다. 성공 취급해 무한 재시도를 막는다.
         - 2xx: 성공.
+        - 401: 공유 시크릿(X-Internal-Secret) 불일치/미설정 — 영구 실패이되 사유를 분리해 남긴다.
         - 400~499(409 제외): 페이로드 결함 등 재시도해도 소용없는 실패 — 영구.
         - 그 외(5xx): 재시도로 회복 가능한 일시 실패.
         네트워크/timeout(httpx 예외)은 여기서 잡지 않고 그대로 전파한다 — 호출부가
         일시 실패로 취급(DELIVERING 유지, 재전송 루프가 재시도).
         """
+        # 시크릿 미설정이면 헤더 자체를 붙이지 않는다(빈 값 전송 아님) — 단계적 전환.
+        headers = (
+            {"X-Internal-Secret": settings.internal_shared_secret}
+            if settings.internal_shared_secret
+            else None
+        )
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{self._base}/api/internal/reports", json=payload)
+            resp = await client.post(
+                f"{self._base}/api/internal/reports", json=payload, headers=headers
+            )
             if resp.status_code == 409:
                 logger.info("Spring 409(멱등키 중복) — 이미 저장된 것으로 간주, 성공 취급")
                 return
             if resp.is_success:
                 return
             body = resp.text[:500]
+            if resp.status_code == 401:
+                # 분류는 4xx=영구 그대로(시크릿 불일치는 재시도로 안 풀린다). 다만 오설정
+                # 하나로 전송이 전량 실패하므로, 페이로드 결함과 구별되게 사유를 명시한다.
+                logger.error(
+                    "Spring 401 — X-Internal-Secret 불일치/미설정 의심. 전송 전량 실패 상태: %s",
+                    body,
+                )
+                raise DeliveryPermanentError(resp.status_code, body)
             if 400 <= resp.status_code < 500:
                 logger.error("Spring 응답 오류(영구) %s: %s", resp.status_code, body)
                 raise DeliveryPermanentError(resp.status_code, body)
