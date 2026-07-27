@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>프롬프트 평가 뷰어</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Malgun Gothic', system-ui, sans-serif;
+    margin: 0; padding: 24px; line-height: 1.5;
+    background: #fbfcfe; color: #1c2530;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #12161c; color: #dfe6ee; }
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #6b7684; font-size: 13px; margin-bottom: 20px; }
+  .controls { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+  label { font-size: 13px; }
+  select, input[type=file] { font: inherit; padding: 4px 6px; }
+  section { margin-bottom: 28px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .card {
+    border: 1px solid #d7dee8; border-radius: 10px; padding: 12px 14px;
+    background: rgba(127,127,127,.04);
+  }
+  @media (prefers-color-scheme: dark) { .card { border-color: #2c3542; } }
+  .card .hash { font-family: ui-monospace, monospace; font-size: 12px; color: #6b7684; }
+  .card .acc { font-size: 24px; font-weight: 700; margin: 4px 0; }
+  .card .meta { font-size: 12px; color: #6b7684; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e6ebf2; white-space: nowrap; }
+  @media (prefers-color-scheme: dark) { th, td { border-color: #232c37; } }
+  th { cursor: pointer; user-select: none; position: sticky; top: 0; background: #eef2f7; }
+  @media (prefers-color-scheme: dark) { th { background: #1a2029; } }
+  th:hover { color: #2f6fdb; }
+  td.mono { font-family: ui-monospace, monospace; font-size: 12px; }
+  .ok { color: #1f9d55; font-weight: 700; }
+  .no { color: #d64545; font-weight: 700; }
+  .dash { color: #9aa4b0; }
+  a { color: #2f6fdb; }
+  .empty { color: #6b7684; padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<h1>프롬프트 평가 뷰어</h1>
+<div class="sub">
+  <code>eval/index.csv</code> 를 읽어 표시. set_hash 별 정답률로 프롬프트 버전을 비교.
+  (파일에서 열면 fetch가 막힐 수 있음 — <code>python -m http.server</code> 로 서빙하거나 아래에서 CSV를 직접 선택.)
+</div>
+
+<div class="controls">
+  <span>시나리오 <select id="f-scenario"><option value="">전체</option></select></span>
+  <span>정답 <select id="f-correct">
+    <option value="">전체</option><option value="O">O</option><option value="X">X</option><option value="-">미채점</option>
+  </select></span>
+  <span>CSV 직접 선택 <input type="file" id="file" accept=".csv"></span>
+</div>
+
+<section id="summary-section" hidden>
+  <h2>버전별(set_hash) 요약</h2>
+  <div class="cards" id="cards"></div>
+</section>
+
+<section>
+  <h2>실행 기록</h2>
+  <div class="table-wrap"><table id="table"><thead></thead><tbody></tbody></table></div>
+  <div class="empty" id="empty">데이터 없음 — index.csv 를 불러오지 못했습니다.</div>
+</section>
+
+<script>
+const COLS = ["ts","scenario","set_hash","report_model","pred_type","pred_service","pred_severity","correct","latency_s","runs_path"];
+let rows = [];
+let sortKey = "ts", sortDir = -1;
+
+// 따옴표(쉼표·개행 포함) 처리하는 최소 CSV 파서.
+function parseCSV(text) {
+  const out = []; let row = [], field = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === ',') { row.push(field); field = ""; }
+      else if (c === '\r') { /* skip */ }
+      else if (c === '\n') { row.push(field); out.push(row); row = []; field = ""; }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); out.push(row); }
+  return out.filter(r => r.length > 1 || (r.length === 1 && r[0] !== ""));
+}
+
+function load(text) {
+  const table = parseCSV(text);
+  if (!table.length) { rows = []; render(); return; }
+  const header = table[0];
+  rows = table.slice(1).map(r => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])));
+  const scenarios = [...new Set(rows.map(r => r.scenario))].sort();
+  const sel = document.getElementById("f-scenario");
+  sel.innerHTML = '<option value="">전체</option>' + scenarios.map(s => `<option>${s}</option>`).join("");
+  render();
+}
+
+function filtered() {
+  const sc = document.getElementById("f-scenario").value;
+  const co = document.getElementById("f-correct").value;
+  return rows.filter(r => (!sc || r.scenario === sc) && (!co || (r.correct || "-") === co));
+}
+
+function renderSummary(data) {
+  const groups = {};
+  for (const r of data) {
+    const k = r.set_hash || "?";
+    (groups[k] ||= []).push(r);
+  }
+  const cards = Object.entries(groups).map(([hash, rs]) => {
+    const scored = rs.filter(r => r.correct === "O" || r.correct === "X");
+    const ok = rs.filter(r => r.correct === "O").length;
+    const acc = scored.length ? Math.round(100 * ok / scored.length) : null;
+    const lat = rs.map(r => parseFloat(r.latency_s)).filter(x => !isNaN(x));
+    const avgLat = lat.length ? (lat.reduce((a, b) => a + b, 0) / lat.length).toFixed(1) : "–";
+    return `<div class="card">
+      <div class="hash">${hash}</div>
+      <div class="acc">${acc === null ? "–" : acc + "%"}</div>
+      <div class="meta">정답 ${ok}/${scored.length} · 실행 ${rs.length}회 · 평균 ${avgLat}s</div>
+    </div>`;
+  }).join("");
+  document.getElementById("cards").innerHTML = cards;
+  document.getElementById("summary-section").hidden = data.length === 0;
+}
+
+function cell(r, key) {
+  const v = r[key] ?? "";
+  if (key === "correct") {
+    if (v === "O") return '<td class="ok">O</td>';
+    if (v === "X") return '<td class="no">X</td>';
+    return '<td class="dash">–</td>';
+  }
+  if (key === "runs_path") return `<td class="mono"><a href="${v}/result.json">${v}</a></td>`;
+  if (key === "set_hash") return `<td class="mono">${v}</td>`;
+  return `<td>${v}</td>`;
+}
+
+function render() {
+  const data = filtered();
+  renderSummary(data);
+  const thead = document.querySelector("#table thead");
+  const tbody = document.querySelector("#table tbody");
+  document.getElementById("empty").hidden = data.length > 0;
+  if (!data.length) { thead.innerHTML = ""; tbody.innerHTML = ""; return; }
+
+  data.sort((a, b) => {
+    let x = a[sortKey] ?? "", y = b[sortKey] ?? "";
+    const nx = parseFloat(x), ny = parseFloat(y);
+    if (!isNaN(nx) && !isNaN(ny)) { x = nx; y = ny; }
+    return x < y ? -sortDir : x > y ? sortDir : 0;
+  });
+
+  thead.innerHTML = "<tr>" + COLS.map(c =>
+    `<th data-k="${c}">${c}${c === sortKey ? (sortDir < 0 ? " ▾" : " ▴") : ""}</th>`).join("") + "</tr>";
+  thead.querySelectorAll("th").forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    if (k === sortKey) sortDir = -sortDir; else { sortKey = k; sortDir = 1; }
+    render();
+  });
+  tbody.innerHTML = data.map(r => "<tr>" + COLS.map(c => cell(r, c)).join("") + "</tr>").join("");
+}
+
+document.getElementById("f-scenario").onchange = render;
+document.getElementById("f-correct").onchange = render;
+document.getElementById("file").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader(); rd.onload = () => load(rd.result); rd.readAsText(f, "utf-8");
+};
+
+// 자동 로드 시도(서빙 중이면 성공, file://면 실패 → 위 파일 선택 사용).
+fetch("index.csv").then(r => r.ok ? r.text() : Promise.reject()).then(load).catch(() => {});
+</script>
+</body>
+</html>
