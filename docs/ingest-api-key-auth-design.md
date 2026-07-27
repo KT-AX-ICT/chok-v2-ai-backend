@@ -1,7 +1,12 @@
-# /ingest API 키 인증 — 설계
+# 서버 간 인증 — 설계
 
 작성일 2026-07-27.
-SDK → FastAPI 인바운드 인증(공유 API 키) 도입의 설계 기록.
+FastAPI의 서버-투-서버 인증 양방향 도입 기록.
+
+- **인바운드** — SDK → FastAPI `/ingest`. 공유 API 키(`X-API-Key`). 규약을 이 문서에서 신규 정의.
+- **아웃바운드** — FastAPI → Spring `/api/internal/reports`. 공유 시크릿(`X-Internal-Secret`). **규약은 Spring에 이미 존재** — 맞춰 보내기만 하면 된다.
+
+두 방향을 한 브랜치에서 처리한다. 인증 관심사가 같고, 양쪽 다 "공유 시크릿 + 단계적 전환"이라 설계가 대칭이다.
 
 ## 배경
 
@@ -9,13 +14,15 @@ SDK → FastAPI 인바운드 인증(공유 API 키) 도입의 설계 기록.
 2. 배포는 `0.0.0.0:8000` 바인딩([entrypoint.sh](../entrypoint.sh), [docker-compose.deploy.yml](../docker-compose.deploy.yml)) — 보안그룹이 8000을 열면 인터넷 공개.
 3. `POST /ingest`는 수신 즉시 job 적재 → 큐 워커 → **LLM 호출**로 이어진다([docs/flow.md](flow.md)). 무인증 요청 1건 = OpenAI 비용 1건.
 4. `GET /ingest/{job_id}`는 `result`(RCA 전문 — 서비스명·원인·근거)를 그대로 반환하고, `job_id`는 순차 정수라 **열거가 쉽다**.
+5. 아웃바운드도 같은 공백 — Spring은 `InternalSecretFilter`를 완성해 두고 **주석 처리 상태**로 대기 중이다. 주석에 사유가 명시돼 있다: "FastAPI 송신측 X-Internal-Secret 헤더 미구현 → 검증 비활성화. 연동되면 주석 해제." 즉 Spring의 수집 API도 현재 무인증 공개다.
 
 ## 목표
 
 - `/ingest` 두 엔드포인트에 공유 API 키 인증 부착
-- 무중단 키 교체 가능(복수 키 동시 허용)
+- Spring 전송에 `X-Internal-Secret` 헤더 부착 — Spring 필터 활성화의 선행 조건 해소
+- 무중단 키 교체 가능(복수 키 동시 허용, 인바운드)
 - 인프라 0 — 키는 배포 시크릿(`.env`)에만 존재, 시크릿 매니저·DB 불필요
-- 기존 테스트 12건 무영향
+- 기존 테스트 무영향
 
 ## 비목표 (YAGNI)
 
@@ -37,7 +44,14 @@ SDK → FastAPI 인바운드 인증(공유 API 키) 도입의 설계 기록.
 | 전환 | 단계적(키 미설정 시 통과) | 서버 배포와 인증 활성화 분리 → `.env` 한 줄로 롤백 |
 | TLS | 미적용 | 도메인 부재. 한계·완화책은 아래 명시 |
 
-## 설계
+아웃바운드는 Spring이 정한 규약을 따르므로 우리 쪽 결정은 둘뿐이다.
+
+| 항목 | 결정 | 근거 |
+|---|---|---|
+| 미설정 시 | 헤더 미부착(빈 값 전송 아님) | Spring 필터가 꺼져 있는 동안 무해 — 우리가 먼저 배포 가능 |
+| 401 처리 | 기존 4xx=영구실패 분류 유지 + **전용 로그** | 시크릿 불일치는 재시도로 안 풀림. 단 오설정과 페이로드 결함이 로그에서 구별돼야 함 |
+
+## 인바운드 — `/ingest` API 키
 
 ### 구성 요소
 
@@ -51,6 +65,8 @@ docker-compose.deploy.yml   environment에 INGEST_API_KEYS 전달
 tests/conftest.py      autouse 픽스처 — 테스트 중 인증 비활성 고정
 tests/test_ingest_auth.py   (신규) 인증 동작 7건
 ```
+
+아웃바운드는 별도 파일 없이 기존 두 곳만 손댄다 — `app/core/config.py`(`internal_shared_secret`), `app/services/spring_client.py`(헤더 부착 + 401 로그), 테스트는 [tests/test_spring_client.py](../tests/test_spring_client.py)에 3건 추가. 상세는 아래 "아웃바운드" 절.
 
 인증 관심사를 `core/auth.py` 한 파일에 격리 — 키 저장소를 env→DB로 옮길 때 변경 지점이 이 파일로 한정된다.
 
@@ -143,7 +159,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"   # 43자, 256bit
 
 분실해도 복구 불필요 — 재생성 후 양쪽 교체로 종료.
 
-## 테스트
+### 테스트
 
 기존 12건([tests/test_ingest.py](../tests/test_ingest.py))은 무변경. 단, `Settings`가 `.env`를 읽으므로 개발자 로컬에 키가 있으면 전부 401이 된다 → conftest에 autouse 픽스처로 테스트 중 강제 비활성([conftest.py](../tests/conftest.py)의 `_dummy_openai_key`와 대칭).
 
@@ -169,7 +185,7 @@ def _no_ingest_auth(monkeypatch):
 
 4·7이 핵심 — 무중단 교체와 health 제외는 깨져도 평시에 드러나지 않는다.
 
-## 전환 절차
+### 전환 절차
 
 1. 키 생성 (`secrets.token_urlsafe(32)`)
 2. `docker-compose.deploy.yml`에 `INGEST_API_KEYS` 전달 줄 추가
@@ -179,6 +195,72 @@ def _no_ingest_auth(monkeypatch):
 6. 검증 — 기동 로그의 경고 소멸 확인, 헤더 없는 요청 401 확인
 
 3·5 분리가 단계적 전환의 요점 — 문제 발생 시 `.env` 한 줄을 비우고 재기동하면 즉시 롤백.
+
+## 아웃바운드 — Spring `X-Internal-Secret`
+
+### Spring 측 규약 (조사 2026-07-27, [chok-v2-spring-backend](https://github.com/KT-AX-ICT/chok-v2-spring-backend) `main`)
+
+| 항목 | 값 | 출처 |
+|---|---|---|
+| 헤더 | `X-Internal-Secret` | `config/InternalSecretFilter.java` — `HEADER` 상수 |
+| 적용 범위 | `/api/internal/**` 전용 | `shouldNotFilter` — 그 외 경로 미검사 |
+| 비교 | `MessageDigest.isEqual` (상수 시간) | 우리 `secrets.compare_digest`와 동일 개념 |
+| 실패 | `401` + `{"error":{"code":"UNAUTHORIZED","message":"인증이 필요합니다"}}` | `doFilterInternal` |
+| Spring env | `INTERNAL_SHARED_SECRET` → `app.internal.shared-secret` | `application.yaml` |
+| 기본값 | **없음(fail-closed)** — 미설정 시 Spring 기동 실패 | 같은 파일 |
+
+`InternalSecretFilterTest`가 확정하는 동작: 올바른 시크릿 통과 · **틀린 시크릿 401** · **헤더 없음 401** · `/api/internal` 밖은 미검사.
+
+**현재 필터는 비활성**이다 — `SecurityConfig.filterChain`에서 `addFilterBefore` 두 줄이 주석 처리돼 있고, `/api/internal/**`는 `permitAll`이다. 우리가 헤더를 붙여야 Spring이 주석을 해제할 수 있다.
+
+### 설계
+
+```python
+# config.py — Spring env와 같은 이름(같은 값을 양쪽이 공유)
+internal_shared_secret: str = ""
+
+# spring_client.py — _post 내부
+headers = (
+    {"X-Internal-Secret": settings.internal_shared_secret}
+    if settings.internal_shared_secret
+    else None
+)
+resp = await client.post(f"{self._base}/api/internal/reports", json=payload, headers=headers)
+```
+
+미설정 시 헤더를 아예 안 붙인다(빈 값 전송 아님) — 단계적 전환. Spring 필터가 꺼져 있는 동안은 헤더 유무가 무관하므로 **우리가 먼저 배포해도 안전**하다.
+
+`docker-compose.deploy.yml`에 `INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-}` 전달 필요(인바운드 키와 동일한 함정 — 누락 시 컨테이너에 값이 안 간다). [.env.example](../.env.example)에는 이미 항목이 있다.
+
+### 401 전용 로그 — 중요
+
+시크릿이 틀리면 Spring은 401을 준다. [spring_client.py](../app/services/spring_client.py)의 D2 분류가 4xx를 `DeliveryPermanentError`로 처리하므로 **재시도 없이 job이 즉시 FAILED**가 된다.
+
+분류 자체는 옳다(시크릿 불일치는 재시도로 안 풀린다). 문제는 **시크릿 오설정 하나로 모든 전송이 영구 실패**하는데, 로그만 봐서는 페이로드 결함과 구별이 안 된다는 점이다. 401만 사유를 명시해 분리한다.
+
+```python
+if resp.status_code == 401:
+    logger.error("Spring 401 — X-Internal-Secret 불일치/미설정 의심. 전송 전량 실패 상태")
+```
+
+### 테스트
+
+[tests/test_spring_client.py](../tests/test_spring_client.py)의 `_fake_client_factory`(httpx `MockTransport`)를 그대로 쓴다 — handler가 `request`를 받으므로 헤더 검증이 가능하다. 3건 추가:
+
+| # | 케이스 | 기대 |
+|---|---|---|
+| 1 | 시크릿 설정 + 전송 | 요청에 `X-Internal-Secret: <값>` 포함 |
+| 2 | 시크릿 미설정 + 전송 | 헤더 **부재**(빈 값 아님) — 단계적 전환 동작 |
+| 3 | Spring 401 응답 | `DeliveryPermanentError` + `status_code == 401` |
+
+### 전환 절차
+
+1. FastAPI에 헤더 부착 + `INTERNAL_SHARED_SECRET` 설정 배포 (Spring 필터 꺼져 있어 무영향)
+2. Spring `.env`에 **동일 값** 설정
+3. Spring `SecurityConfig`의 `addFilterBefore` 주석 해제 → 배포. **여기서 검증 활성화**
+4. 검증 — 전송 성공 확인, 시크릿을 일부러 틀리게 했을 때 401 로그가 위 문구로 나오는지 확인
+
+3이 Spring 레포 작업이라 이 브랜치 범위 밖이다. 우리는 1까지 완료하고 인계한다.
 
 ## 남은 위험
 
@@ -193,11 +275,14 @@ def _no_ingest_auth(monkeypatch):
 
 무인증 대비로는 확실한 개선(EC2 IP만 알면 되던 것 → 경로상 관찰자 지위 필요)이나, HTTPS 대체는 아니다.
 
+아웃바운드(FastAPI→Spring)도 평문이지만 노출도는 낮다 — 인터넷을 건너지 않고 같은 호스트/사설망 안에서 끝나기 때문이다([config.py](../app/core/config.py) `spring_base_url`). 두 서비스가 서로 다른 네트워크로 분리되면 이 전제가 깨지므로 그때 재검토한다.
+
 ## 향후
 
-| 항목 | 시점 |
-|---|---|
-| TLS — Caddy + Let's Encrypt(도메인 없으면 `<ip>.sslip.io` 우회) | 도메인 확보 또는 외부 노출 확대 시 |
-| 테넌트별 키 — `company_code ↔ 키 해시` 테이블 | 2번째 기업 온보딩 시 |
-| `POST /ingest` 본문 크기 제한 | 별건 |
-| 단계적 → 강제(fail-fast) 전환 | 전환 절차 6 완료 후 |
+| 항목 | 시점 | 담당 |
+|---|---|---|
+| Spring `SecurityConfig` 주석 해제 — 필터 활성화 | 양쪽 시크릿 설정 후 | **Spring 레포** |
+| TLS — Caddy + Let's Encrypt(도메인 없으면 `<ip>.sslip.io` 우회) | 도메인 확보 또는 외부 노출 확대 시 | FastAPI |
+| 테넌트별 키 — `company_code ↔ 키 해시` 테이블 | 2번째 기업 온보딩 시 | FastAPI |
+| `POST /ingest` 본문 크기 제한 | 별건 | FastAPI |
+| 인바운드 단계적 → 강제(fail-fast) 전환 | 인바운드 전환 절차 6 완료 후 | FastAPI |
