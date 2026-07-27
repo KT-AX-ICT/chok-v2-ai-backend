@@ -161,7 +161,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"   # 43자, 256bit
 
 ### 테스트
 
-기존 12건([tests/test_ingest.py](../tests/test_ingest.py))은 무변경. 단, `Settings`가 `.env`를 읽으므로 개발자 로컬에 키가 있으면 전부 401이 된다 → conftest에 autouse 픽스처로 테스트 중 강제 비활성([conftest.py](../tests/conftest.py)의 `_dummy_openai_key`와 대칭).
+기존 11건([tests/test_ingest.py](../tests/test_ingest.py))은 무변경. 단, `Settings`가 `.env`를 읽으므로 개발자 로컬에 키가 있으면 전부 401이 된다 → conftest에 autouse 픽스처로 테스트 중 강제 비활성([conftest.py](../tests/conftest.py)의 `_dummy_openai_key`와 대칭).
 
 ```python
 @pytest.fixture(autouse=True)

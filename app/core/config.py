@@ -78,6 +78,17 @@ class Settings(BaseSettings):
     # RCA 1회 실행 전체 벽시계 캡(초). asyncio.wait_for로 orchestrator.run을 감쌈.
     rca_overall_timeout_seconds: int = 600
 
+    # --- 서버 간 인증 ---
+    # SDK → FastAPI 인바운드 키. 콤마 구분으로 복수 허용 — 교체 중 old,new를 동시에
+    # 받아야 SDK를 무중단으로 갱신할 수 있다.
+    # 비어 있으면 검증하지 않는다(단계적 전환). 그 상태는 기동 시 경고로 드러낸다.
+    ingest_api_keys: str = ""
+
+    @property
+    def ingest_api_key_set(self) -> frozenset[str]:
+        """콤마 구분 문자열 → 키 집합. 캐시하지 않는다 — 테스트의 monkeypatch가 먹어야 한다."""
+        return frozenset(k.strip() for k in self.ingest_api_keys.split(",") if k.strip())
+
     @property
     def async_db_url(self) -> str:
         return (

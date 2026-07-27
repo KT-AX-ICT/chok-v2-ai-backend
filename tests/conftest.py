@@ -36,6 +36,16 @@ def _isolated_bundle_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "bundle_storage_dir", str(tmp_path / "bundles"))
 
 
+@pytest.fixture(autouse=True)
+def _no_ingest_auth(monkeypatch):
+    """테스트 기본은 인증 비활성.
+
+    Settings가 .env를 읽으므로, 개발자 로컬에 실 키가 있으면 기존 ingest 테스트가
+    전부 401이 된다. 인증 테스트는 각 케이스에서 다시 키를 주입한다.
+    """
+    monkeypatch.setattr(settings, "ingest_api_keys", "")
+
+
 @pytest.fixture()
 async def db_engine():
     engine = create_async_engine(TEST_DB_URL, echo=False)
