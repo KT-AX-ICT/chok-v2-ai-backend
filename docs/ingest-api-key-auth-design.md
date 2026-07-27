@@ -11,7 +11,7 @@ FastAPI의 서버-투-서버 인증 양방향 도입 기록.
 ## 배경
 
 1. [app/main.py](../app/main.py)에 인증 미들웨어·의존성이 없다. [app/api/ingest.py](../app/api/ingest.py)의 두 엔드포인트는 **무인증 공개**다.
-2. 배포는 `0.0.0.0:8000` 바인딩([entrypoint.sh](../entrypoint.sh), [docker-compose.deploy.yml](../docker-compose.deploy.yml)) — 보안그룹이 8000을 열면 인터넷 공개.
+2. 배포는 `0.0.0.0:8000` 바인딩([entrypoint.sh](../entrypoint.sh))이고, 중앙 배포([chok-v2-deploy](https://github.com/KT-AX-ICT/chok-v2-deploy) `docker-compose.yml`)가 `${FASTAPI_PUBLISHED_PORT:-8000}:8000`으로 호스트에 게시한다 — 방화벽이 8000을 열면 인터넷 공개.
 3. `POST /ingest`는 수신 즉시 job 적재 → 큐 워커 → **LLM 호출**로 이어진다([docs/flow.md](flow.md)). 무인증 요청 1건 = OpenAI 비용 1건.
 4. `GET /ingest/{job_id}`는 `result`(RCA 전문 — 서비스명·원인·근거)를 그대로 반환하고, `job_id`는 순차 정수라 **열거가 쉽다**.
 5. 아웃바운드도 같은 공백 — Spring은 `InternalSecretFilter`를 완성해 두고 **주석 처리 상태**로 대기 중이다. 주석에 사유가 명시돼 있다: "FastAPI 송신측 X-Internal-Secret 헤더 미구현 → 검증 비활성화. 연동되면 주석 해제." 즉 Spring의 수집 API도 현재 무인증 공개다.
@@ -61,7 +61,7 @@ app/core/config.py     ingest_api_keys 설정 + ingest_api_key_set 프로퍼티
 app/api/ingest.py      라우터 선언에 dependencies 추가
 app/main.py            lifespan에 미설정 경고
 .env.example           INGEST_API_KEYS= (빈 값)
-docker-compose.deploy.yml   environment에 INGEST_API_KEYS 전달
+(배포 env 주입은 chok-v2-deploy 저장소 — 아래 "배포 저장소 인계")
 tests/conftest.py      autouse 픽스처 — 테스트 중 인증 비활성 고정
 tests/test_ingest_auth.py   (신규) 인증 동작 7건
 ```
@@ -152,10 +152,10 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"   # 43자, 256bit
 
 | 위치 | 내용 |
 |---|---|
-| 서버 EC2 `.env` | 실질 원본. `.env`는 [.gitignore](../.gitignore)로 추적 제외 |
-| `docker-compose.deploy.yml` | `INGEST_API_KEYS: ${INGEST_API_KEYS:-}` — **누락 시 컨테이너에 값이 안 간다** |
+| 배포 서버 `.env` (chok-v2-deploy) | 실질 원본. 그 저장소 `.gitignore`로 추적 제외 |
+| chok-v2-deploy `docker-compose.yml` | `fastapi` 서비스 `environment:`에 전달 줄 필요 — **누락 시 `.env`에 값이 있어도 컨테이너에 안 간다** |
 | SDK 설정 | env/설정 파일로 주입. 소스 하드코딩 금지(커밋 시 키 교체가 곧 배포가 됨) |
-| `.env.example` | 빈 값만. 예시 값을 적으면 그대로 복사해 쓰는 사고 발생 |
+| 이 저장소 `.env.example` | **로컬 개발 전용**(README "실행 설정 경계"). 빈 값만 — 예시 값을 적으면 그대로 복사해 쓰는 사고 발생 |
 
 분실해도 복구 불필요 — 재생성 후 양쪽 교체로 종료.
 
@@ -188,7 +188,7 @@ def _no_ingest_auth(monkeypatch):
 ### 전환 절차
 
 1. 키 생성 (`secrets.token_urlsafe(32)`)
-2. `docker-compose.deploy.yml`에 `INGEST_API_KEYS` 전달 줄 추가
+2. chok-v2-deploy에 `INGEST_API_KEYS` 전달 줄 추가(아래 "배포 저장소 인계")
 3. **서버 배포** — 이 시점 `.env`에 키 없음 → 인증 비활성, 기존 SDK 정상 동작
 4. **SDK에 `X-API-Key` 헤더 추가** 후 배포
 5. **EC2 `.env`에 키 설정 → 재기동** — 여기서 인증 활성화
@@ -230,7 +230,7 @@ resp = await client.post(f"{self._base}/api/internal/reports", json=payload, hea
 
 미설정 시 헤더를 아예 안 붙인다(빈 값 전송 아님) — 단계적 전환. Spring 필터가 꺼져 있는 동안은 헤더 유무가 무관하므로 **우리가 먼저 배포해도 안전**하다.
 
-`docker-compose.deploy.yml`에 `INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:-}` 전달 필요(인바운드 키와 동일한 함정 — 누락 시 컨테이너에 값이 안 간다). [.env.example](../.env.example)에는 이미 항목이 있다.
+chok-v2-deploy의 `fastapi` 서비스에 `INTERNAL_SHARED_SECRET` 전달 필요(인바운드 키와 동일한 함정 — 누락 시 컨테이너에 값이 안 간다). 값 자체는 이미 그 저장소 `.env.example`에 있고 `spring` 서비스에는 필수(`:?`)로 주입 중이다 — **fastapi만 못 받고 있다**.
 
 ### 401 전용 로그 — 중요
 
@@ -261,6 +261,31 @@ if resp.status_code == 401:
 4. 검증 — 전송 성공 확인, 시크릿을 일부러 틀리게 했을 때 401 로그가 위 문구로 나오는지 확인
 
 3이 Spring 레포 작업이라 이 브랜치 범위 밖이다. 우리는 1까지 완료하고 인계한다.
+
+## 배포 저장소 인계
+
+배포 환경변수 주입은 이 저장소가 아니라 [chok-v2-deploy](https://github.com/KT-AX-ICT/chok-v2-deploy)가 관리한다(#18에서 이관, README "실행 설정 경계"). 이 저장소의 `.env.example`·`docker-compose.yml`은 **로컬 개발 전용**이며 배포 서버로 복사되지 않는다.
+
+**대상 1 — `docker-compose.yml`의 `fastapi` 서비스 `environment:` 블록.** `BUNDLE_STORAGE_DIR` 다음 줄에 2줄 추가:
+
+```yaml
+  fastapi:
+    environment:
+      ...
+      BUNDLE_STORAGE_DIR: /app/data/bundles
+      INGEST_API_KEYS: ${INGEST_API_KEYS:-}                 # 추가
+      INTERNAL_SHARED_SECRET: ${INTERNAL_SHARED_SECRET:?set INTERNAL_SHARED_SECRET in .env}   # 추가
+```
+
+- `INGEST_API_KEYS`는 기본값 있음(`:-`) — 미설정이어도 기동되어야 단계적 전환이 성립한다.
+- `INTERNAL_SHARED_SECRET`은 필수(`:?`) — 같은 파일의 `spring` 서비스가 이미 같은 형태로 받고 있어 표기를 맞춘다. **값은 이미 존재하고 fastapi만 못 받는 상태**다.
+
+**대상 2 — 같은 저장소 `.env.example`.** `INTERNAL_SHARED_SECRET`은 이미 있으므로 인바운드 키만 추가:
+
+```
+# FastAPI /ingest inbound API key (comma-separated for rotation)
+INGEST_API_KEYS=
+```
 
 ## 남은 위험
 
