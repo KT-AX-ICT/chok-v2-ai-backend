@@ -25,6 +25,13 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "OPENAI_API_KEY 미설정 — 실서버 기동 거부 (무키 기동은 테스트 전용)"
         )
+    # 단계적 전환의 대가가 "설정 실수 = 무인증 공개"라, 이 경고가 유일한 감지 수단이다.
+    # 전환 완료 후에는 이 줄이 안 나오는 것이 정상.
+    if not settings.ingest_api_key_set:
+        logger.warning(
+            "INGEST_API_KEYS 미설정 — /ingest 무인증 공개 상태. "
+            "단계적 전환 중이면 정상, 아니면 즉시 설정할 것."
+        )
     # 스키마는 Alembic 마이그레이션이 소유. 로컬 편의로 켤 때만 create_all(멱등).
     if settings.db_auto_create:
         try:

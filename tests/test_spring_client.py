@@ -370,3 +370,50 @@ async def test_post_propagates_network_errors(monkeypatch):
     _fake_client_factory(monkeypatch, handler)
     with pytest.raises(httpx.ConnectTimeout):
         await SpringClient()._post({"a": 1})
+
+
+# ------------------------------------------------------- 아웃바운드 인증 (X-Internal-Secret)
+
+
+async def test_post_sends_internal_secret_header(monkeypatch):
+    """Spring InternalSecretFilter가 요구하는 헤더 — 설정돼 있으면 반드시 실린다."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "internal_shared_secret", "s3cr3t-value")
+    seen = {}
+
+    def handler(request):
+        seen["secret"] = request.headers.get("X-Internal-Secret")
+        return httpx.Response(200)
+
+    _fake_client_factory(monkeypatch, handler)
+    await SpringClient()._post({"a": 1})
+
+    assert seen["secret"] == "s3cr3t-value"
+
+
+async def test_post_omits_header_when_secret_unset(monkeypatch):
+    """단계적 전환 — 미설정이면 빈 값이 아니라 헤더 자체를 붙이지 않는다."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "internal_shared_secret", "")
+    seen = {}
+
+    def handler(request):
+        seen["has_header"] = "X-Internal-Secret" in request.headers
+        return httpx.Response(200)
+
+    _fake_client_factory(monkeypatch, handler)
+    await SpringClient()._post({"a": 1})
+
+    assert seen["has_header"] is False
+
+
+async def test_post_raises_permanent_error_on_401(monkeypatch):
+    """시크릿 불일치는 재시도로 안 풀린다 — 기존 4xx=영구 분류를 그대로 탄다."""
+    _fake_client_factory(
+        monkeypatch, lambda request: httpx.Response(401, text="unauthorized")
+    )
+    with pytest.raises(DeliveryPermanentError) as exc_info:
+        await SpringClient()._post({"a": 1})
+    assert exc_info.value.status_code == 401

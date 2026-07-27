@@ -5,13 +5,20 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import require_api_key
 from app.db.models import IngestJob
 from app.db.session import get_db
 from app.schemas.contracts import IngestBundle
 from app.services import bundle_store
 from app.services.job_queue import job_queue
 
-router = APIRouter(prefix="/ingest", tags=["ingest"])
+router = APIRouter(
+    prefix="/ingest",
+    tags=["ingest"],
+    # 라우터 레벨 부착 — 이후 이 라우터에 엔드포인트를 추가해도 자동으로 보호된다
+    # (기본값=잠김). 경로 문자열에 의존하는 미들웨어와 달리 prefix가 바뀌어도 안 풀린다.
+    dependencies=[Depends(require_api_key)],
+)
 
 logger = logging.getLogger(__name__)
 
