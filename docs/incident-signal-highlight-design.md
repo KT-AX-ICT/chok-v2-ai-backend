@@ -77,10 +77,31 @@ baseline 주입(PR #26)이 만성 노이즈 오진은 없앴으나 kill_media �
 - 트리거 없으면(하위호환) 하이라이트 없음 + 기존 정렬 폴백(기존 테스트 회귀 없음).
 - 상한(`_HIGHLIGHT_CAP`) 초과 시 절단.
 
-## 측정 (하네스)
+## 측정 (하네스 before/after)
 
-`python -m eval.run` → before `193a0899982c`(baseline 주입) / after. 목표: kill_media SERVICE_DOWN/media
-전환, code_media service→media 근접. 결과를 본 문서 표에 기입.
+before = baseline 주입 `193a0899982c`, after = 하이라이트 `0b87554a18bd`.
+
+| 시나리오 | 정답 | before | after |
+|---|---|---|---|
+| cpu | PERFORMANCE | O | **O** |
+| kill_media | SERVICE_DOWN / media | X (PERFORMANCE / UNKNOWN) | X (**type SERVICE_DOWN** ✓ / service `trace` ✗) |
+| code_media | CODE_STOP / media | X (DEPENDENCY / nginx) | X (type DEPENDENCY ✗ / **service media-service** ✓) |
+
+**정답률 1/3 불변이나 하이라이트가 겨냥한 필드를 정확히 고침:**
+
+- **kill_media type PERFORMANCE→SERVICE_DOWN** ✓. rootCause·log 결론 모두 *"media가 08:35:31 전후
+  내려갔다 재시작 = SERVICE_DOWN"* 으로 정확 진단 — lifecycle 하이라이트(`media ×2 incid=1`)를 그대로 읽음.
+- **code_media service nginx→media-service** ✓. 트리거 로그 하이라이트의 `Failed to connect
+  media-service`를 읽어 진원을 media로 국소화.
+
+**각 시나리오에 남은 한 필드**(별개 급소, 후속):
+- kill_media `service=trace` — log/report는 media를 맞게 짚었으나, **trace 에이전트가 `origin_service`로
+  모달리티명 `"trace"`(쓰레기값)를 반환**하고 `assemble()`이 이를 최우선해 덮어씀. → trace 진원 추출 규칙
+  (trace.md) 또는 assemble 방어(모달리티명 거부) 필요.
+- code_media `type=DEPENDENCY` — media 연결 실패를 의존 장애로 분류(정답 CODE_STOP). 분류 경계 이슈.
+
+결론: 하이라이트는 **저빈도 결정 신호를 부각해 진원 국소화를 유도**하는 자기 몫을 실측으로 해냈다. 남은
+두 필드는 trace 진원값·유형 분류라는 별개 급소로, 후속 분리.
 
 ## 리스크
 
