@@ -15,6 +15,12 @@ from app.schemas.contracts import Actions, Impact, Rca, Summary
 Modality = Literal["log", "metric", "trace"]
 Depth = Literal["deep", "scan"]
 
+# 장애 유형 고정 enum — 프롬프트(report.md 지침 4)가 의미·선택 기준을 설명하고,
+# 이 Literal이 with_structured_output으로 값 자체를 강제한다.
+RcaType = Literal[
+    "SERVICE_DOWN", "CODE_STOP", "PERFORMANCE", "DEPENDENCY", "OTHER", "NONE"
+]
+
 MODALITIES: tuple[Modality, ...] = ("log", "metric", "trace")
 
 
@@ -34,7 +40,9 @@ class ReportDraft(BaseModel):
     그대로 주입한다 (토큰 절약 + 원본 보존).
     """
 
-    type: str = Field(description="장애 유형 (예: Code_Stop, Svc_Kill, Unknown)")
+    type: RcaType = Field(
+        description="장애 유형 6종 중 하나 (report.md 지침 4의 정의를 따름)"
+    )
     severity: str = Field(description="HIGH / MID / LOW")
     service: str = Field(description="진원 서비스명")
     rca: Rca

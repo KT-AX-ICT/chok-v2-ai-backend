@@ -49,7 +49,7 @@ def _bundle(with_data: bool = True) -> IngestBundle:
 def _fake_orchestrator(
     trace_origin: str | None = "media-service",
     draft_service: str = "unknown",
-    draft_type: str = "Unknown",
+    draft_type: str = "NONE",
 ) -> LlmOrchestrator:
     """LLM 노드 전부를 fake로 채운 오케스트레이터 — 그래프 배선은 실제 그대로."""
 
@@ -132,11 +132,11 @@ async def test_empty_modalities_still_valid():
 async def test_agents_are_swappable():
     """그래프 본문 변경 없이 노드 에이전트만 갈아끼워진다."""
     swapped = _fake_orchestrator(
-        trace_origin=None, draft_service="SWAPPED", draft_type="Swapped"
+        trace_origin=None, draft_service="SWAPPED", draft_type="OTHER"
     )
     result = await swapped.run(1, _bundle())
     assert result.service == "SWAPPED"
-    assert result.type == "Swapped"
+    assert result.type == "OTHER"
 
 
 async def test_full_pipeline_through_queue_reaches_done(factory, monkeypatch):
