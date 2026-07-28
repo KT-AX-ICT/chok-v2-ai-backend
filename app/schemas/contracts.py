@@ -148,7 +148,6 @@ class MetricEvidence(CamelModel):
 class Rca(CamelModel):
     rootCause: str
     propagation: str
-    confidence: int | None = None
 
 
 class Summary(CamelModel):
