@@ -67,7 +67,70 @@ def test_log_empty():
     assert compress_logs([]) == "(없음)"
 
 
+def test_log_surprise_sorts_acute_above_chronic():
+    """평소(트리거 이전)에 많던 만성 패턴은 뒤로, 트리거 이후에만 튄 급성 패턴은 앞으로.
+    surprise = incid/(base+baseline+1) 기준."""
+    items = (
+        # 만성 ERROR: 트리거 전 5회 + 후 1회 → surprise 낮음
+        [_item(f"2026-01-15T09:5{i}:00Z", "user", "ERROR dup key 111") for i in range(5)]
+        + [_item("2026-01-15T10:02:00Z", "user", "ERROR dup key 111")]
+        # 급성 INFO: 트리거 전 0 + 후 2회 → surprise 높음
+        + [_item("2026-01-15T10:02:10Z", "media", "INFO Starting the media-service server"),
+           _item("2026-01-15T10:02:11Z", "media", "INFO Starting the media-service server")]
+    )
+    out = compress_logs(items, trigger_time="2026-01-15T10:00:00Z")
+    data = [ln for ln in out.splitlines() if not ln.startswith("#")]
+    assert data[0].startswith("media")  # 급성이 만성보다 위
+
+
+def test_log_base_incid_counts_in_output():
+    """트리거 전/후 건수가 base=/incid=로 표기된다."""
+    items = [
+        _item("2026-01-15T09:59:00Z", "svc", "ERROR x"),   # 트리거 전
+        _item("2026-01-15T10:01:00Z", "svc", "ERROR x"),   # 트리거 후
+        _item("2026-01-15T10:02:00Z", "svc", "ERROR x"),
+    ]
+    out = compress_logs(items, trigger_time="2026-01-15T10:00:00Z")
+    assert "base=1 incid=2" in out
+
+
+def test_log_no_trigger_falls_back_to_level_count():
+    """trigger_time 없으면 기존 레벨/count 정렬 유지(회귀 안전)."""
+    items = [
+        _item("2026-01-15T10:00:01Z", "a", "INFO ok"),
+        _item("2026-01-15T10:00:02Z", "b", "ERROR boom"),
+    ]
+    out = compress_logs(items)  # 트리거 없음
+    data = [ln for ln in out.splitlines() if not ln.startswith("#")]
+    assert data[0].startswith("b")  # ERROR 먼저
+
+
+def test_load_baseline_profile_absent_returns_empty(monkeypatch, tmp_path):
+    """프로파일 파일이 없으면 조용히 빈 dict(운영·CI 기본 상태)."""
+    import app.services.bundle_compression as bc
+
+    bc._load_baseline_profile.cache_clear()
+    monkeypatch.setattr(bc, "_BASELINE_PROFILE_PATH", tmp_path / "nope.json")
+    assert bc._load_baseline_profile() == {}
+    bc._load_baseline_profile.cache_clear()
+
+
 # ------------------------------------------------------------ metric 통계
+
+
+def test_metric_anomalous_series_sorted_first():
+    """알파벳상 뒤에 있어도 이상점이 큰 시리즈가 먼저 나온다."""
+    base = (
+        [_item(f"2026-01-15T10:00:{i:02d}Z", "n", '{"aaa": 10.0}') for i in range(5)]
+        + [_item(f"2026-01-15T10:00:{i:02d}Z", "n", '{"zzz": 1.0}') for i in range(5)]
+    )
+    incid = [
+        _item("2026-01-15T10:02:00Z", "n", '{"aaa": 10.0}'),   # 이상 없음
+        _item("2026-01-15T10:02:00Z", "n", '{"zzz": 99.0}'),   # 큰 이탈
+    ]
+    out = compress_metrics(base + incid, trigger_time="2026-01-15T10:01:30Z")
+    data = [ln for ln in out.splitlines() if ln.startswith("n\t")]
+    assert data[0].startswith("n\tzzz")  # 이상점 시리즈가 먼저
 
 
 def test_metric_detects_onset_and_peak():

@@ -78,7 +78,7 @@ def parse_for_log_agent(bundle: IngestBundle) -> dict:
         "trigger_time": bundle.trigger_info.trigger_time,
         "triggered_by": bundle.trigger_info.triggered_by,
         "log_intervals": _interval_summary(bundle.modality_info.log.intervals),
-        "logs": compress_logs(bundle.logs),
+        "logs": compress_logs(bundle.logs, bundle.trigger_info.trigger_time),
     }
 
 
