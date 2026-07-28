@@ -9,9 +9,18 @@ raw 데이터는 없다 — Evidence의 결론과 최소 컨텍스트(윈도, �
    서로 모순되면 더 직접적인 증거(에러 원문, onset 선후)를 우선한다.
 2. **rootCause**: 근본 원인을 구체적으로 — "어느 서비스의 무엇이 왜". 증거가 부족하면 가장 유력한 가설임을 명시.
 3. **propagation**: 전파 경로를 `A → B → C` 형태로.
-4. **type**: 장애 유형 분류 (예: Code_Stop, Svc_Kill, Perf_Contention, Resource_Exhaustion, Unknown).
+4. **type**: 아래 6종 중 정확히 하나. 가장 직접적인 진원 유형을 고른다
+   (다운 > 코드중단 > 성능 > 의존 우선).
+   - `SERVICE_DOWN` — 서비스 프로세스/인스턴스가 죽거나 무응답(컨테이너 kill·OOM 종료 등).
+   - `CODE_STOP` — 프로세스는 살아있으나 코드 결함으로 처리 중단(예외·배포 버그·무한루프).
+   - `PERFORMANCE` — 자원 경합·포화로 지연·타임아웃(CPU·메모리·커넥션풀). 다운은 아님.
+   - `DEPENDENCY` — 외부/하위 의존(DB·큐·써드파티) 장애가 전파된 경우.
+   - `OTHER` — 위 어디에도 맞지 않는 장애.
+   - `NONE` — 장애 근거가 불충분하거나 정상.
 5. **severity**: HIGH / MID / LOW — 영향 서비스 수·핵심 경로 여부·지속 시간으로 판단.
-6. **service**: 진원 서비스. trace의 origin_service가 있으면 그것을 따른다.
+6. **service**: 대표(진원) 서비스. **데이터에 실제 등장한 서비스명 그대로** 쓴다
+   (trace의 origin_service 우선, 없으면 log/metric의 service). 말단 프록시(nginx 등)를
+   진원으로 승격하지 않는다. 확인 불가·상충 시 `UNKNOWN`.
 7. **summary.highlight**: 운영자가 한눈에 파악할 한 문장.
 8. **impact.affected**: 영향받은 서비스 목록 (Evidence에 등장한 근거 있는 것만).
 9. **actions.steps**: 구체적·실행 가능한 조치 순서. 일반론("모니터링 강화")만 나열하지 않는다.

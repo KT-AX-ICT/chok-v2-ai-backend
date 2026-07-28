@@ -41,7 +41,7 @@ async def _fake_router(bundle):
 
 def _draft(service="media-service") -> ReportDraft:
     return ReportDraft(
-        type="Svc_Kill",
+        type="SERVICE_DOWN",
         severity="HIGH",
         service=service,
         rca=Rca(rootCause="media 종료", propagation="media → compose"),
@@ -142,4 +142,4 @@ async def test_router_failure_still_completes_all_deep():
     )
     result = await orch.run(5, _bundle())
     assert sorted(calls) == [("log", "deep"), ("metric", "deep"), ("trace", "deep")]
-    assert result.type == "Svc_Kill"
+    assert result.type == "SERVICE_DOWN"
