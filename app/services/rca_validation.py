@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from pydantic import ValidationError
 
+from app.core.schema_errors import summarize_validation_errors
 from app.schemas.contracts import RcaResult
 
 
@@ -34,10 +35,13 @@ def validate_rca_result(raw: object) -> RcaResult:
         try:
             return RcaResult.model_validate(raw)
         except ValidationError as exc:
-            locs = "; ".join(
-                ".".join(str(p) for p in err["loc"]) for err in exc.errors()
-            )
-            raise RcaResultInvalid(f"RcaResult 스키마 불일치 필드: {locs}") from exc
+            # 필드 경로만 남기면 누락(missing)인지 타입 불일치인지 구별되지 않는다 —
+            # 오류 코드·사유까지 함께 남긴다. 이 문자열은 로그뿐 아니라 job.error(DB)와
+            # Spring 실패 페이로드의 reason으로도 흘러가므로 건수·길이 상한이 걸린 공용
+            # 포맷을 쓴다(app/core/schema_errors.py).
+            raise RcaResultInvalid(
+                f"RcaResult 스키마 불일치: {summarize_validation_errors(exc.errors())}"
+            ) from exc
     raise RcaResultInvalid(
         f"RCA 산출물 타입 부적합: {type(raw).__name__} (dict 또는 RcaResult 필요)"
     )

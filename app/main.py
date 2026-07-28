@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api.health import router as health_router
 from app.api.ingest import router as ingest_router
 from app.core.config import settings
+from app.core.error_handlers import register_error_handlers
 from app.core.logging_config import setup_logging
 from app.db.session import init_db
 from app.services.delivery_reconciler import delivery_reconciler
@@ -58,5 +59,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CHOK v2 AI Backend", version="0.1.0", lifespan=lifespan)
+# 요청 스키마 불일치(422) 사유를 서버 로그에도 남긴다 — 기본 동작은 응답 본문에만 담는다.
+register_error_handlers(app)
 app.include_router(ingest_router)
 app.include_router(health_router)
