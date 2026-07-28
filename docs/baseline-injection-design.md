@@ -111,12 +111,30 @@ RCA가 **만성 노이즈를 근본 원인으로 오판**한다. 예: kill_media
 - `analyze_baseline.py`: 소형 픽스처 로그 → 예상 `(service, level, template)` count.
 회귀: 기존 compression 테스트 전량 통과(서비스별 miner·마스킹으로 dedup count가 바뀌는 곳 확인·갱신).
 
-## 측정 (하네스)
+## 측정 (하네스 before/after)
 
-1. `Normal_Baseline` 추출 → `analyze_baseline.py` → `log_profile.json` 커밋.
-2. `python -m eval.run` 실행. before = main(현행, 정형화 포함) set_hash / after = 본 변경 set_hash.
-3. 목표: kill_media `SERVICE_DOWN`/media, code_media `CODE_STOP`/media, cpu 유지. 최소 만성 오판 제거 확인.
-4. 결과를 본 문서 측정 표에 기입.
+고정 픽스처 3종. before = 정형화(taxonomy) set_hash `743c2fb15d0e`, after = 본 변경 set_hash `193a0899982c`.
+
+| 시나리오 | 정답 | before(정형화) | after(baseline 주입) |
+|---|---|---|---|
+| cpu | PERFORMANCE | O (PERFORMANCE / socialgraph) | **O** (PERFORMANCE / socialgraph) |
+| kill_media | SERVICE_DOWN / media | X (**CODE_STOP** / nginx) | X (PERFORMANCE / UNKNOWN) |
+| code_media | CODE_STOP / media | X (DEPENDENCY / nginx) | X (DEPENDENCY / nginx) |
+
+**정답률 1/3 → 1/3 (수치 불변). 그러나 이 기능의 설계 목표는 달성:**
+
+- **만성 노이즈 오진 제거 (핵심 목표).** kill_media에서 예전엔 duplicate-key(`E11000`)에 latch돼
+  `CODE_STOP`으로 오진했으나, after에선 log 근거가 **"이 패턴은 baseline=200으로 평소에도 늘 보이는
+  만성 패턴이라 단독 근본원인으로 보기 어렵다"** 고 명시하며 배제했다. `baseline` 주입 → surprise 정렬 →
+  프롬프트 지침이 의도대로 연동돼 작동함을 실측 확인. service도 잘못된 `nginx` 승격이 사라짐(→UNKNOWN).
+
+- **남은 갭 (별도 후속).** kill_media 정답(SERVICE_DOWN/media)엔 미도달 — media가 kill돼 자체 로그·trace가
+  결측이라 모델이 media를 아예 못 보고(‘media’ 미언급), 하류 리소스 경합(PERFORMANCE)으로 흐름. 즉 남은
+  급소는 **"침묵/부재 신호"**(관측 가능한 서비스가 죽어 신호가 사라진 것) 해석 — baseline 주입 범위 밖이며,
+  metric/trace의 결측 국소화·onset 선후 판단 강화가 필요한 별도 작업.
+
+결론: baseline 주입은 **"만성 노이즈에 속지 않기"** 라는 자기 몫을 해냈고, 하네스가 이를 정성적으로 확인했다.
+정답률 상승은 다른 급소(부재 신호 해석)에 달려 있어 후속으로 분리한다.
 
 ## 리스크
 
@@ -130,4 +148,5 @@ RCA가 **만성 노이즈를 근본 원인으로 오판**한다. 예: kill_media
 
 - 브랜치 `feat/baseline-injection` (주 폴더 `C:\chok-v2-ai-backend`에서 작업, base main).
 - 커밋 대상: `bundle_compression.py`, `bundle_parser.py`, `log.md`, `metric.md`, `scripts/analyze_baseline.py`,
-  `datasets/baseline/log_profile.json`, 유닛테스트, 본 설계 문서, `.gitignore`(원본 baseline 로그 제외).
+  `app/services/baseline/log_profile.json`(생성물만), 유닛테스트, 본 설계 문서, `.gitignore`.
+  원본 baseline 로그는 레포 밖(`BASELINE_LOG_DIR` env, 기본 `app/services/baseline/_raw/` gitignore).
