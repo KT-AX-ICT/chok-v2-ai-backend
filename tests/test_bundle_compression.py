@@ -115,6 +115,62 @@ def test_load_baseline_profile_absent_returns_empty(monkeypatch, tmp_path):
     bc._load_baseline_profile.cache_clear()
 
 
+# ------------------------------------------------ 진원 후보 하이라이트
+
+
+def _highlight_part(out: str) -> str:
+    """하이라이트 섹션(정상 dedup 목록 앞부분)만 잘라낸다."""
+    return out.split("# 로그 패턴 dedup")[0]
+
+
+def test_highlight_surfaces_service_restart_despite_low_surprise():
+    """서비스 재시작(lifecycle) 로그는 surprise 낮아도 하이라이트에 노출."""
+    items = (
+        # media 재시작: base 1(초기 부팅) + incid 1(재시작) → surprise 낮음
+        [_item("2026-01-15T09:58:00Z", "media", "INFO Starting the media-service server...")]
+        + [_item("2026-01-15T10:00:30Z", "media", "INFO Starting the media-service server...")]
+        # 시끄러운 급성 에러(하이라이트 아님)
+        + [_item(f"2026-01-15T10:0{i}:10Z", "user", "ERROR dup key 111") for i in range(1, 6)]
+    )
+    out = compress_logs(items, trigger_time="2026-01-15T10:00:00Z", triggered_by=["log"])
+    hl = _highlight_part(out)
+    assert "진원 후보 하이라이트" in out
+    assert "media" in hl and "Starting the media-service server" in hl
+
+
+def test_highlight_trigger_time_log_when_log_triggered():
+    """log 트리거면 트리거 시각 로그(연결 실패 등)를 하이라이트에 노출."""
+    items = [
+        _item("2026-01-15T10:00:00Z", "composepost", "ERROR Failed to connect media-service-client"),
+        _item("2026-01-15T10:05:00Z", "other", "INFO fine far away"),
+    ]
+    out = compress_logs(items, trigger_time="2026-01-15T10:00:00Z", triggered_by=["log"])
+    hl = _highlight_part(out)
+    assert "트리거 시각" in hl
+    assert "Failed to connect media-service-client" in hl
+
+
+def test_highlight_skips_trigger_group_when_not_log_triggered():
+    """metric만 트리거면 트리거 로그 그룹은 생략(로그창은 노이즈)."""
+    items = [_item("2026-01-15T10:00:00Z", "svc", "INFO normal traffic at trigger")]
+    out = compress_logs(items, trigger_time="2026-01-15T10:00:00Z", triggered_by=["metric"])
+    assert "트리거 시각" not in out
+
+
+def test_highlight_absent_when_no_signal():
+    """lifecycle·트리거 신호 없으면 하이라이트 섹션 자체가 없다."""
+    items = [_item("2026-01-15T10:05:00Z", "svc", "INFO ok far from trigger")]
+    out = compress_logs(items, trigger_time="2026-01-15T10:00:00Z", triggered_by=["log"])
+    assert "진원 후보 하이라이트" not in out
+
+
+def test_highlight_absent_without_trigger_time():
+    """trigger_time 없으면 하이라이트 없음(회귀 안전)."""
+    items = [_item("2026-01-15T10:00:00Z", "media", "INFO Starting the media-service server...")]
+    out = compress_logs(items)
+    assert "진원 후보 하이라이트" not in out
+
+
 # ------------------------------------------------------------ metric 통계
 
 
