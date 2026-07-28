@@ -57,6 +57,25 @@ def test_missing_key_raises_invalid():
     assert "actions" in str(exc.value)  # 사유에 누락 필드가 드러남
 
 
+def test_missing_key_reason_includes_error_type():
+    """필드 경로만으로는 누락인지 타입 불일치인지 못 가린다 — 오류 코드까지 남긴다."""
+    payload = _valid_result().model_dump(by_alias=True, exclude_none=True)
+    del payload["detail"]["actions"]
+    with pytest.raises(RcaResultInvalid) as exc:
+        validate_rca_result(payload)
+    assert "detail.actions[missing]" in str(exc.value)
+
+
+def test_type_mismatch_reason_distinguishable_from_missing():
+    payload = _valid_result().model_dump(by_alias=True, exclude_none=True)
+    payload["detail"]["actions"] = "리스트가 아니라 문자열"
+    with pytest.raises(RcaResultInvalid) as exc:
+        validate_rca_result(payload)
+    reason = str(exc.value)
+    assert "detail.actions" in reason
+    assert "missing" not in reason
+
+
 def test_wrong_type_raises_invalid():
     with pytest.raises(RcaResultInvalid):
         validate_rca_result("이건 문자열이지 RCA 결과가 아님")
