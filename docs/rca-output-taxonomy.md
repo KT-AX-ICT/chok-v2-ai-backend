@@ -38,12 +38,22 @@ RCA 산출물의 `type`·`service` 값을 고정·앵커링하고 미사용 `con
 
 ## 측정 (하네스 before/after)
 
-고정 픽스처 3종에 대한 정답률. (Task 5 실행 후 수치·set_hash 기입.)
+고정 픽스처 3종에 대한 정답률. before set_hash `8f9de8214700`, after set_hash `743c2fb15d0e`(report_model gpt-5.5).
 
-| 시나리오 | 정답(type/service) | before | after |
+| 시나리오 | 정답(type/service) | before | after(pred) |
 |---|---|---|---|
-| cpu | PERFORMANCE / (service 무관) | O | _TBD_ |
-| kill_media | SERVICE_DOWN / media | X | _TBD_ |
-| code_media | CODE_STOP / media | X | _TBD_ |
+| cpu | PERFORMANCE / (service 무관) | O | **O** — PERFORMANCE / UNKNOWN |
+| kill_media | SERVICE_DOWN / media | X | X — CODE_STOP / nginx |
+| code_media | CODE_STOP / media | X | X — DEPENDENCY / nginx |
 
-before set_hash `8f9de8214700` (1/3). after set_hash: _TBD_.
+**결과: 1/3 → 1/3 (정답률 불변).** 정형화의 **구조적** 목표는 달성:
+- type이 6종 enum 값으로만 출력됨(자유문자열 제거).
+- confidence가 실제 산출물에서 사라짐(rca 키 = rootCause·propagation).
+- cpu에서 UNKNOWN 폴백 정상 동작.
+
+그러나 **진단 정확도는 개선되지 않음.** 측정으로 드러난 두 급소:
+
+1. **service 앵커링의 실제 급소는 `trace.md`.** `service: nginx`는 report가 아니라 **trace 에이전트의 `origin_service`**가 말단 프록시(nginx)를 진원으로 뽑아 발생. `assemble()`이 `trace_ev.origin_service`를 최우선하므로 `report.md`의 "nginx 승격 금지" 규칙은 도달하지 못한다. → 진원 추출 규칙을 `trace.md`에 넣어야 함(후속).
+2. **type 오분류는 진단 품질 문제.** kill_media가 배경 노이즈(user MongoDB 중복키)에 latch되어 미디어 kill(SERVICE_DOWN)을 CODE_STOP으로, code_media를 DEPENDENCY로 오판. enum 강제와 무관한 상관분석·우선순위 판단 이슈(후속 프롬프트 개선).
+
+즉 이 브랜치는 "출력 형식 고정"까지를 완결하고, "정확도 개선"은 별도 후속(1: trace.md 진원 규칙, 2: report 상관분석 강화)으로 분리한다. 하네스가 이 분리를 정량적으로 확인해 준 셈.
