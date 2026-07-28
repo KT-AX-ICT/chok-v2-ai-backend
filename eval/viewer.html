@@ -105,6 +105,10 @@
   .imp-table th { padding:9px 14px; font:700 11px system-ui; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; background:var(--bg2); border-bottom:1px solid var(--border); }
   .imp-table td { padding:10px 14px; border-bottom:1px solid var(--border2); }
   .imp-svc { color:var(--text1); font-weight:600; } .imp-err { color:var(--err-text); font-weight:700; }
+  .imp-metrics { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; }
+  .imp-card { background:var(--bg2); border:1px solid var(--border); border-radius:8px; padding:11px 14px; min-width:0; }
+  .imp-card-l { font:700 11px system-ui; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; margin-bottom:5px; word-break:break-word; }
+  .imp-card-v { font:400 13px/1.5 system-ui; color:var(--text1); word-break:break-word; }
 
   /* ── 오버레이 ── */
   .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:50; padding:24px; overflow:auto; }
@@ -212,8 +216,14 @@ function tCause(d,active){ const ev=d.evidence||{}, L={log:"Log Agent",trace:"Tr
   ${active==="trace"&&e.originService?`<div class="cause-item"><span class="cause-label">origin_service</span><span class="cause-src"><span class="inline-code">${esc(e.originService)}</span></span></div>`:""}
   <div class="note">※ 원문 lines/spans/items 는 제품에서 Spring이 DB raw로 조립 — AI 출력엔 결론·출처만 있음.</div>`;
 }
-function tImpact(d){ const af=(d.impact&&d.impact.affected)||[]; if(!af.length) return `<div class="note">affected 없음.</div>`;
-  return `<table class="imp-table"><thead><tr><th>service</th><th>errors</th><th>type</th></tr></thead><tbody>${af.map(a=>`<tr><td class="imp-svc">${esc(a.service)}</td><td class="imp-err">${a.errors!=null?esc(a.errors):"—"}</td><td style="color:var(--text2)">${esc(a.type)||"—"}</td></tr>`).join("")}</tbody></table>`;
+function tImpact(d){ const af=(d.impact&&d.impact.affected)||[]; const ms=(d.impact&&d.impact.metrics)||[];
+  const table = af.length
+    ? `<table class="imp-table"><thead><tr><th>service</th><th>errors</th><th>type</th></tr></thead><tbody>${af.map(a=>`<tr><td class="imp-svc">${esc(a.service)}</td><td class="imp-err">${a.errors!=null?esc(a.errors):"—"}</td><td style="color:var(--text2)">${esc(a.type)||"—"}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="note">affected 없음.</div>`;
+  const cards = ms.length
+    ? `<div class="seclabel">지표</div><div class="imp-metrics">${ms.map(m=>`<div class="imp-card"><div class="imp-card-l">${esc(m.label)||"—"}</div><div class="imp-card-v">${m.value!=null?code(m.value):"—"}</div></div>`).join("")}</div>`
+    : "";
+  return table + cards;
 }
 function tAction(d){ const st=(d.actions&&d.actions.steps)||[];
   return (st.length?`<div class="steps">${st.map((s,i)=>`<div class="step"><span class="step-num">${i+1}</span><span class="step-tx">${code(s)}</span></div>`).join("")}</div>`:`<div class="note">steps 없음.</div>`)
