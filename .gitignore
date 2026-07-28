@@ -19,3 +19,8 @@ data/
 # 에이전트 작업 산출물 (로컬 워크플로우 아티팩트 — 리포에 넣지 않음)
 .playwright-mcp/
 docs/superpowers/
+
+# 프롬프트 평가 하네스 실행 생성물 (fixtures/*.json 은 추적, 아래만 무시)
+eval/runs/
+eval/index.csv
+eval/fixtures/*.dup*.json

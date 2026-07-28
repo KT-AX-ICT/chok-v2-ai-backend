@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>프롬프트 평가 뷰어</title>
+<style>
+  /* ── 디자인 토큰 (chok-v2-react-frontend src/index.css 포팅) ── */
+  :root {
+    --surface:#fff; --bg2:#f2f5f7; --bg3:#edf8f5; --border:#dde4ea; --border2:#edf1f5;
+    --text1:#0f172a; --text2:#64748b; --text3:#94a3b8; --text4:#374151; --brand:#00c9a7;
+    --chip-error:#fee2e2; --chip-error-text:#ef4444; --chip-warn:#ffedd5; --chip-warn-text:#ea580c;
+    --chip-success:#dcfce7; --chip-success-text:#16a34a; --chip-amber:#fef3c7;
+    --chip-info-text:#00a896; --err-surface:#fff5f5; --err-text:#ef4444; --ok-text:#16a34a; --warn-text2:#92400e;
+    --neutral-tag:#f1f5f9; --neutral-tag-text:#374151;
+  }
+  html[data-dark] {
+    --surface:#161c24; --bg2:#0f1318; --bg3:#131920; --border:#222c38; --border2:#161c24;
+    --text1:#c9d1d9; --text2:#6e7f8d; --text3:#4a5e72; --text4:#8a9baa; --brand:#20c997;
+    --chip-error:rgba(220,60,60,.14); --chip-error-text:#e06c6c; --chip-warn:rgba(210,130,30,.1); --chip-warn-text:#d29922;
+    --chip-success:rgba(40,160,100,.12); --chip-success-text:#3fb950; --chip-amber:rgba(200,140,30,.1);
+    --chip-info-text:#20c997; --err-surface:rgba(200,50,50,.09); --err-text:#e06c6c; --ok-text:#3fb950; --warn-text2:#d29922;
+    --neutral-tag:#1a2030; --neutral-tag-text:#6e7f8d;
+  }
+  * { box-sizing:border-box; transition:background-color .18s ease, color .18s ease, border-color .18s ease; }
+  body { font-family:system-ui,'Malgun Gothic',sans-serif; margin:0; padding:24px; background:var(--bg2); color:var(--text1); }
+  .topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:4px; }
+  h1 { font-size:20px; margin:0; }
+  .sub { color:var(--text3); font-size:13px; margin-bottom:20px; }
+  .theme-btn { font:inherit; font-size:13px; padding:6px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text2); cursor:pointer; }
+  .controls { display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:16px; font-size:13px; color:var(--text2); }
+  select, input[type=file] { font:inherit; padding:4px 6px; background:var(--surface); color:var(--text1); border:1px solid var(--border); border-radius:6px; }
+  section { margin-bottom:28px; }
+  h2 { font-size:15px; margin:0 0 10px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; }
+  .card { border:1px solid var(--border); border-radius:10px; padding:12px 14px; background:var(--surface); }
+  .card .hash { font-family:ui-monospace,monospace; font-size:12px; color:var(--text3); }
+  .card .acc { font-size:24px; font-weight:800; margin:4px 0; letter-spacing:-.02em; }
+  .card .meta { font-size:12px; color:var(--text3); }
+  .table-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--border2); white-space:nowrap; }
+  th { cursor:pointer; user-select:none; font:700 11px system-ui; text-transform:uppercase; letter-spacing:.04em; color:var(--text2); background:var(--bg2); }
+  th.nosort { cursor:default; }
+  tbody tr { cursor:pointer; }
+  tbody tr:last-child td { border-bottom:none; }
+  tbody tr:hover { background:var(--bg2); }
+  td.mono { font-family:ui-monospace,monospace; font-size:12px; color:var(--text4); }
+  .ok { color:var(--ok-text); font-weight:800; } .no { color:var(--err-text); font-weight:800; } .dash { color:var(--text3); }
+  .empty { color:var(--text3); padding:40px 0; text-align:center; }
+  .cmpbar { margin-top:12px; }
+  button.act { font:inherit; padding:7px 16px; border:1px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text1); cursor:pointer; }
+  button.act:disabled { opacity:.4; cursor:default; }
+
+  /* ── 리포트 렌더 (report-detail.css 간격 그대로) ── */
+  .sev-badge { display:inline-block; font:700 11px system-ui; padding:3px 9px; border-radius:6px; }
+  .sev-HIGH { background:var(--chip-error); color:var(--chip-error-text); }
+  .sev-MID  { background:var(--chip-warn); color:var(--chip-warn-text); }
+  .sev-LOW  { background:var(--chip-success); color:var(--chip-success-text); }
+  .rpt-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .rpt-title { font:800 21px system-ui; letter-spacing:-.03em; color:var(--text1); }
+  .rpt-title .svc { font-weight:400; color:var(--text2); }
+  .rca { background:var(--bg2); border:1.5px solid var(--border); border-radius:9px; padding:16px 20px; margin-bottom:16px; }
+  .rca-head { font:700 11px system-ui; color:var(--text3); text-transform:uppercase; letter-spacing:.05em; margin-bottom:12px; }
+  .rca-row { display:flex; gap:10px; margin-bottom:12px; }
+  .rca-row:last-child { margin-bottom:0; }
+  .rca-key { flex-shrink:0; width:56px; font:700 11px system-ui; color:var(--text3); padding-top:3px; }
+  .rca-val { font:400 14px/1.6 system-ui; color:var(--text1); }
+  .chain { display:flex; flex-direction:column; }
+  .chain__step { display:flex; gap:10px; }
+  .chain__mk { flex-shrink:0; width:8px; display:flex; flex-direction:column; align-items:center; }
+  .chain__dot { width:8px; height:8px; border-radius:50%; background:var(--brand); margin-top:6px; flex-shrink:0; }
+  .chain__ln { width:1.5px; flex:1; background:var(--border); margin:2px 0; }
+  .chain__tx { font:13px/1.5 system-ui; color:var(--text4); padding-bottom:10px; }
+  .inline-code { font:.93em ui-monospace,monospace; color:var(--chip-info-text); }
+
+  .tabs { display:flex; background:var(--surface); border:1px solid var(--border); border-radius:9px 9px 0 0; border-bottom:none; }
+  .tab { padding:11px 22px; font:600 13px system-ui; color:var(--text2); background:none; border:none; border-bottom:2.5px solid transparent; cursor:pointer; }
+  .tab.on { font-weight:700; color:var(--brand); border-bottom-color:var(--brand); }
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:0 0 9px 9px; padding:20px; margin-top:-1px; }
+  .subtabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:16px; }
+  .subtab { padding:8px 18px; font:500 12px system-ui; color:var(--text3); background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; margin-bottom:-1px; }
+  .subtab.on { font-weight:700; color:var(--text1); border-bottom-color:var(--text1); }
+
+  .hl { background:var(--bg2); border:1.5px solid var(--border); border-radius:8px; padding:14px 18px; font:400 14px/1.7 system-ui; color:var(--text1); margin-bottom:16px; }
+  .seclabel { font:700 11px system-ui; color:var(--text2); text-transform:uppercase; letter-spacing:.06em; margin:14px 0 8px; }
+  .row-tags { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { display:inline-block; font:12px system-ui; padding:4px 10px; border-radius:12px; background:var(--bg3); border:1px solid var(--border); color:var(--text4); }
+  .tag { display:inline-block; font:12px system-ui; padding:4px 10px; border-radius:6px; }
+  .tag-err { background:var(--chip-error); color:var(--chip-error-text); }
+  .tag-neu { background:var(--neutral-tag); color:var(--neutral-tag-text); }
+
+  .cause-item { display:flex; gap:12px; align-items:flex-start; margin-bottom:8px; }
+  .cause-label { flex-shrink:0; width:88px; font:700 11px system-ui; color:var(--text3); padding-top:11px; }
+  .cause-src { font:400 13px/1.5 system-ui; color:var(--text3); padding-top:11px; }
+  .cause-concl { flex:1; background:var(--bg2); border:1px solid var(--border); border-radius:7px; padding:10px 14px; font:400 13px/1.55 system-ui; color:var(--text1); }
+  .note { font:12px system-ui; color:var(--text3); font-style:italic; margin-top:12px; }
+
+  .steps { display:flex; flex-direction:column; gap:10px; }
+  .step { display:flex; align-items:flex-start; gap:12px; }
+  .step-num { width:26px; height:26px; background:var(--brand); border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font:800 12px system-ui; color:#fff; flex-shrink:0; }
+  .step-tx { font:13px/1.65 system-ui; color:var(--text1); padding-top:4px; }
+
+  .imp-table { width:100%; border-collapse:collapse; font:13px system-ui; }
+  .imp-table th { padding:9px 14px; font:700 11px system-ui; color:var(--text2); text-transform:uppercase; letter-spacing:.04em; background:var(--bg2); border-bottom:1px solid var(--border); }
+  .imp-table td { padding:10px 14px; border-bottom:1px solid var(--border2); }
+  .imp-svc { color:var(--text1); font-weight:600; } .imp-err { color:var(--err-text); font-weight:700; }
+
+  /* ── 오버레이 ── */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:50; padding:24px; overflow:auto; }
+  .overlay.on { display:block; }
+  .modal { max-width:960px; margin:0 auto; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px 32px; }
+  .modal.wide { max-width:1240px; }
+  .modal-x { float:right; font-size:22px; border:none; background:none; color:var(--text3); cursor:pointer; line-height:1; }
+  .cmpgrid { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  .cmpcol { border:1px solid var(--border); border-radius:10px; padding:18px; min-width:0; background:var(--bg2); }
+  .cmpcol h3 { font:12px ui-monospace,monospace; color:var(--text3); margin:0 0 12px; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>프롬프트 평가 뷰어</h1>
+  <button class="theme-btn" id="theme">🌙 다크</button>
+</div>
+<div class="sub">
+  <code>eval/index.csv</code> · set_hash별 정답률로 프롬프트 버전 비교 · 행 클릭=상세, 체크 2개=비교.
+  (파일에서 열면 fetch 막힘 — <code>python -m eval.serve</code> 권장.)
+</div>
+
+<div class="controls">
+  <span>시나리오 <select id="f-scenario"><option value="">전체</option></select></span>
+  <span>정답 <select id="f-correct"><option value="">전체</option><option value="O">O</option><option value="X">X</option><option value="-">미채점</option></select></span>
+  <span>CSV 직접 선택 <input type="file" id="file" accept=".csv"></span>
+</div>
+
+<section id="summary-section" hidden>
+  <h2>버전별(set_hash) 요약</h2>
+  <div class="cards" id="cards"></div>
+</section>
+
+<section>
+  <h2>실행 기록</h2>
+  <div class="table-wrap"><table id="table"><thead></thead><tbody></tbody></table></div>
+  <div class="empty" id="empty">데이터 없음 — index.csv 를 불러오지 못했습니다.</div>
+  <div class="cmpbar"><button class="act" id="cmp-btn" disabled>선택한 2개 비교</button> <span id="cmp-hint" style="color:var(--text3);font-size:12px"></span></div>
+</section>
+
+<div class="overlay" id="ov-detail"><div class="modal"><button class="modal-x" data-close>×</button><div id="detail-body"></div></div></div>
+<div class="overlay" id="ov-compare"><div class="modal wide"><button class="modal-x" data-close>×</button><h2 style="margin-top:0">2-run 비교</h2><div class="cmpgrid" id="compare-body"></div></div></div>
+
+<script>
+// ── 테마 ──
+function applyTheme(dark){
+  document.documentElement.toggleAttribute("data-dark", dark);
+  document.getElementById("theme").textContent = dark ? "☀️ 라이트" : "🌙 다크";
+}
+let dark = localStorage.getItem("eval-theme");
+dark = dark ? dark==="dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+applyTheme(dark);
+document.getElementById("theme").onclick = () => { dark=!dark; localStorage.setItem("eval-theme", dark?"dark":"light"); applyTheme(dark); };
+
+const COLS = ["ts","scenario","set_hash","report_model","pred_type","pred_service","pred_severity","correct","latency_s","runs_path"];
+let rows = [], sortKey = "ts", sortDir = -1;
+const checked = new Set();
+
+// ── CSV ──
+function parseCSV(text){
+  const out=[]; let row=[],f="",q=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; } else f+=c; }
+    else { if(c==='"')q=true; else if(c===','){row.push(f);f="";} else if(c==='\r'){} else if(c==='\n'){row.push(f);out.push(row);row=[];f="";} else f+=c; } }
+  if(f.length||row.length){row.push(f);out.push(row);}
+  return out.filter(r=>r.length>1||(r.length===1&&r[0]!==""));
+}
+function load(text){
+  const t=parseCSV(text); if(!t.length){rows=[];render();return;}
+  const h=t[0]; rows=t.slice(1).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]??""])));
+  const scs=[...new Set(rows.map(r=>r.scenario))].sort();
+  document.getElementById("f-scenario").innerHTML='<option value="">전체</option>'+scs.map(s=>`<option>${s}</option>`).join("");
+  render();
+}
+function filtered(){
+  const sc=document.getElementById("f-scenario").value, co=document.getElementById("f-correct").value;
+  return rows.filter(r=>(!sc||r.scenario===sc)&&(!co||(r.correct||"-")===co));
+}
+
+// ── helpers ──
+const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const code=s=>esc(s).replace(/`([^`]+)`/g,'<span class="inline-code">$1</span>');
+const sevBadge=s=>`<span class="sev-badge sev-${esc(s)||'MID'}">${esc(s)||'—'}</span>`;
+function chain(text){
+  const steps=String(text||"").split(/\s*(?:→|->)\s*/).filter(Boolean);
+  return `<div class="chain">${steps.map((s,i)=>`<div class="chain__step"><div class="chain__mk"><span class="chain__dot"></span>${i<steps.length-1?'<span class="chain__ln"></span>':''}</div><span class="chain__tx">${code(s)}</span></div>`).join("")}</div>`;
+}
+const runPath=r=>String(r.runs_path||"").replace(/\\/g,"/");
+async function fetchResult(r){ const res=await fetch(runPath(r)+"/result.json"); if(!res.ok) throw new Error("result.json fetch 실패 ("+res.status+")"); return res.json(); }
+
+// ── 리포트 섹션 ──
+function head(res){ return `<div class="rpt-head">${sevBadge(res.severity)}<span class="rpt-title">[${esc(res.type)}] <span class="svc">${esc(res.service)}</span></span></div>`; }
+function rca(d){ const c=d.rca||{}; return `<div class="rca"><div class="rca-head">종합 에이전트 RCA 결론${c.confidence!=null?` · 확신도 ${esc(c.confidence)}`:""}</div>
+  <div class="rca-row"><span class="rca-key">근본 원인</span><span class="rca-val">${code(c.rootCause)}</span></div>
+  <div class="rca-row"><span class="rca-key">전파 경로</span><div style="flex:1">${chain(c.propagation)}</div></div></div>`; }
+function tSummary(d){ const s=d.summary||{};
+  const chips=(s.chips||[]).map(c=>`<span class="chip">${esc(c)}</span>`).join("");
+  const tags=[...(s.errorTags||[]).map(t=>`<span class="tag tag-err">${esc(t)}</span>`),...(s.neutralTags||[]).map(t=>`<span class="tag tag-neu">${esc(t)}</span>`)].join("");
+  return `<div class="hl">${code(s.highlight)}</div>${chips?`<div class="seclabel">감지 신호</div><div class="row-tags">${chips}</div>`:""}${tags?`<div class="seclabel">연루 서비스/태그</div><div class="row-tags">${tags}</div>`:""}`;
+}
+function tCause(d,active){ const ev=d.evidence||{}, L={log:"Log Agent",trace:"Trace Agent",metric:"Metric Agent"}, e=ev[active]||{};
+  return `<div class="subtabs">${["log","trace","metric"].map(a=>`<button class="subtab${a===active?' on':''}" data-sub="${a}">${L[a]}</button>`).join("")}</div>
+  <div class="cause-item"><span class="cause-label">출처</span><span class="cause-src">${esc(e.source)||"—"}</span></div>
+  <div class="cause-item"><span class="cause-label">분석 결론</span><div class="cause-concl">${code(e.conclusion)}</div></div>
+  ${active==="trace"&&e.originService?`<div class="cause-item"><span class="cause-label">origin_service</span><span class="cause-src"><span class="inline-code">${esc(e.originService)}</span></span></div>`:""}
+  <div class="note">※ 원문 lines/spans/items 는 제품에서 Spring이 DB raw로 조립 — AI 출력엔 결론·출처만 있음.</div>`;
+}
+function tImpact(d){ const af=(d.impact&&d.impact.affected)||[]; if(!af.length) return `<div class="note">affected 없음.</div>`;
+  return `<table class="imp-table"><thead><tr><th>service</th><th>errors</th><th>type</th></tr></thead><tbody>${af.map(a=>`<tr><td class="imp-svc">${esc(a.service)}</td><td class="imp-err">${a.errors!=null?esc(a.errors):"—"}</td><td style="color:var(--text2)">${esc(a.type)||"—"}</td></tr>`).join("")}</tbody></table>`;
+}
+function tAction(d){ const st=(d.actions&&d.actions.steps)||[];
+  return (st.length?`<div class="steps">${st.map((s,i)=>`<div class="step"><span class="step-num">${i+1}</span><span class="step-tx">${code(s)}</span></div>`).join("")}</div>`:`<div class="note">steps 없음.</div>`)
+    +(d.actions&&d.actions.recovery?`<div class="seclabel">복구</div><div class="hl">${code(d.actions.recovery)}</div>`:"");
+}
+const TABS=[["요약",tSummary],["원인",tCause],["영향",tImpact],["조치",tAction]];
+function renderDetail(res){ const d=res.detail||{}, el=document.getElementById("detail-body"); let tab=0, sub="log";
+  function paint(){ const [,fn]=TABS[tab];
+    el.innerHTML=head(res)+rca(d)+`<div class="tabs">${TABS.map((t,i)=>`<button class="tab${i===tab?' on':''}" data-tab="${i}">${t[0]}</button>`).join("")}</div><div class="panel">${tab===1?fn(d,sub):fn(d)}</div>`;
+    el.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{tab=+b.dataset.tab;paint();});
+    el.querySelectorAll("[data-sub]").forEach(b=>b.onclick=()=>{sub=b.dataset.sub;paint();});
+  } paint();
+}
+function compact(res){ const d=res.detail||{}, ev=d.evidence||{};
+  const evc=["log","trace","metric"].map(a=>`<div class="cause-item"><span class="cause-label">${a}</span><div class="cause-concl">${code((ev[a]||{}).conclusion)}</div></div>`).join("");
+  return head(res)+rca(d)+`<div class="seclabel">요약</div><div class="hl">${code((d.summary||{}).highlight)}</div><div class="seclabel">근거 결론</div>${evc}<div class="seclabel">조치</div>${tAction(d)}`;
+}
+
+// ── 오버레이 ──
+function openDetail(r){ const ov=document.getElementById("ov-detail"); document.getElementById("detail-body").innerHTML='<div class="note">로딩 중…</div>'; ov.classList.add("on");
+  fetchResult(r).then(renderDetail).catch(e=>{document.getElementById("detail-body").innerHTML=`<div class="note">${esc(e.message)} — python -m eval.serve 로 서빙했는지 확인.</div>`;});
+}
+function openCompare(){ const list=[...checked]; if(list.length!==2) return;
+  const ov=document.getElementById("ov-compare"), body=document.getElementById("compare-body"); body.innerHTML='<div class="note">로딩 중…</div>'; ov.classList.add("on");
+  Promise.all(list.map(i=>fetchResult(rows[i]))).then(([a,b])=>{
+    body.innerHTML=`<div class="cmpcol"><h3>${esc(rows[list[0]].scenario)} · ${esc(rows[list[0]].set_hash)}</h3>${compact(a)}</div><div class="cmpcol"><h3>${esc(rows[list[1]].scenario)} · ${esc(rows[list[1]].set_hash)}</h3>${compact(b)}</div>`;
+  }).catch(e=>{body.innerHTML=`<div class="note">${esc(e.message)}</div>`;});
+}
+document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>b.closest(".overlay").classList.remove("on"));
+document.querySelectorAll(".overlay").forEach(o=>o.onclick=e=>{if(e.target===o)o.classList.remove("on");});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")document.querySelectorAll(".overlay.on").forEach(o=>o.classList.remove("on"));});
+
+// ── 요약 + 표 ──
+function renderSummary(data){ const g={}; for(const r of data){(g[r.set_hash||"?"]||=[]).push(r);}
+  document.getElementById("cards").innerHTML=Object.entries(g).map(([h,rs])=>{
+    const sc=rs.filter(r=>r.correct==="O"||r.correct==="X"), ok=rs.filter(r=>r.correct==="O").length;
+    const acc=sc.length?Math.round(100*ok/sc.length):null;
+    const lat=rs.map(r=>parseFloat(r.latency_s)).filter(x=>!isNaN(x));
+    const avg=lat.length?(lat.reduce((a,b)=>a+b,0)/lat.length).toFixed(1):"–";
+    return `<div class="card"><div class="hash">${esc(h)}</div><div class="acc">${acc==null?"–":acc+"%"}</div><div class="meta">정답 ${ok}/${sc.length} · 실행 ${rs.length}회 · 평균 ${avg}s</div></div>`;
+  }).join("");
+  document.getElementById("summary-section").hidden=data.length===0;
+}
+function cell(r,k){ const v=r[k]??"";
+  if(k==="correct") return v==="O"?'<td class="ok">O</td>':v==="X"?'<td class="no">X</td>':'<td class="dash">–</td>';
+  if(k==="set_hash"||k==="runs_path") return `<td class="mono">${esc(v)}</td>`;
+  return `<td>${esc(v)}</td>`;
+}
+function render(){ const data=filtered(); renderSummary(data);
+  const thead=document.querySelector("#table thead"), tbody=document.querySelector("#table tbody");
+  document.getElementById("empty").hidden=data.length>0;
+  if(!data.length){thead.innerHTML="";tbody.innerHTML="";return;}
+  data.sort((a,b)=>{let x=a[sortKey]??"",y=b[sortKey]??"";const nx=parseFloat(x),ny=parseFloat(y);if(!isNaN(nx)&&!isNaN(ny)){x=nx;y=ny;}return x<y?-sortDir:x>y?sortDir:0;});
+  thead.innerHTML="<tr><th class='nosort'></th>"+COLS.map(c=>`<th data-k="${c}">${c}${c===sortKey?(sortDir<0?" ▾":" ▴"):""}</th>`).join("")+"</tr>";
+  thead.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(k===sortKey)sortDir=-sortDir;else{sortKey=k;sortDir=1;}render();});
+  tbody.innerHTML=data.map(r=>{const idx=rows.indexOf(r);return `<tr data-idx="${idx}"><td><input type="checkbox" data-chk="${idx}" ${checked.has(idx)?"checked":""}></td>${COLS.map(c=>cell(r,c)).join("")}</tr>`;}).join("");
+  tbody.querySelectorAll("tr").forEach(tr=>tr.onclick=e=>{ if(e.target.matches("[data-chk]")) return; openDetail(rows[+tr.dataset.idx]); });
+  tbody.querySelectorAll("[data-chk]").forEach(cb=>cb.onclick=e=>{ e.stopPropagation(); const i=+cb.dataset.chk; if(cb.checked)checked.add(i); else checked.delete(i); updateCmp(); });
+  updateCmp();
+}
+function updateCmp(){ const n=checked.size; document.getElementById("cmp-btn").disabled=n!==2; document.getElementById("cmp-hint").textContent=n===0?"":`${n}개 선택${n>2?" (2개만 가능)":""}`; }
+
+document.getElementById("f-scenario").onchange=render;
+document.getElementById("f-correct").onchange=render;
+document.getElementById("cmp-btn").onclick=openCompare;
+document.getElementById("file").onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>load(rd.result);rd.readAsText(f,"utf-8");};
+fetch("index.csv").then(r=>r.ok?r.text():Promise.reject()).then(load).catch(()=>{});
+</script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+# 프롬프트 평가 하네스 — CI 실행 + gh-pages 누적 배포.
+#
+# 수동 트리거(Actions → prompt-eval → Run workflow)로 eval을 돌려, 결과(viewer + index.csv +
+# runs)를 gh-pages 브랜치에 **누적** 배포한다. gh-pages는 데이터 전용 브랜치 — main과 무관.
+#
+# 사전(관리자 1회 설정):
+#   1) repo Secrets 에 OPENAI_API_KEY 추가 (Settings → Secrets and variables → Actions)
+#   2) Settings → Pages → Source = "Deploy from a branch" → gh-pages / (root)
+#      (gh-pages 브랜치는 이 워크플로우가 첫 실행 때 자동 생성)
+#
+# 주의: eval 실행마다 OpenAI 실호출(과금)이므로 push 자동 트리거는 두지 않았다.
+# 프롬프트 변경 시 자동 실행하려면 아래 push 블록 주석을 해제.
+
+name: prompt-eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: "시나리오당 반복 횟수(LLM 비결정성 관찰)"
+        default: "1"
+        required: false
+  # push:
+  #   branches: [main]
+  #   paths: ["app/agents/prompts/**"]   # 프롬프트 바뀔 때만 자동
+
+permissions:
+  contents: write   # gh-pages 브랜치 push
+
+concurrency:        # 동시 실행 방지 — index.csv 누적 경합 회피
+  group: prompt-eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install deps
+        run: uv sync
+
+      - name: Run eval (실 LLM 호출)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run python -m eval.run --repeat "${{ github.event.inputs.repeat || '1' }}"
+
+      - name: Stage site (viewer + 결과, index.csv 누적)
+        run: |
+          set -e
+          mkdir -p _site/runs
+          cp eval/viewer.html _site/
+          cp -r eval/runs/. _site/runs/
+          # 이전 배포본 index.csv 에 이번 실행분을 append (없으면 신규)
+          git fetch origin gh-pages --depth 1 2>/dev/null || true
+          if git cat-file -e origin/gh-pages:index.csv 2>/dev/null; then
+            git show origin/gh-pages:index.csv > _site/index.csv
+            tail -n +2 eval/index.csv >> _site/index.csv
+            echo "누적: 기존 index.csv 에 이번 실행 append"
+          else
+            cp eval/index.csv _site/index.csv
+            echo "첫 배포 — 신규 index.csv"
+          fi
+
+      - name: Publish to gh-pages (기존 runs 유지 + 신규 추가)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./_site
+          keep_files: true   # gh-pages 의 기존 runs/ 등 보존, 이번 것만 추가

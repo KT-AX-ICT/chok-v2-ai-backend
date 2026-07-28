@@ -1,0 +1,28 @@
+# 프롬프트 평가 정답 (설계 C단계).
+#
+# 시나리오별 기대 type/service. scoring.py가 예측 RcaResult와 비교한다.
+#   type    — 정형화 후 고정 enum. 정형화 전(하네스 초기)엔 자유문자열이라 type_keywords로 관대 매칭.
+#   service — 데이터 앵커명. service_aliases로 표기 변형 흡수. service_optional=true면 채점 제외.
+#
+# ※ service 정확값은 픽스처(트레이스 데이터)의 service 필드에서 확인 후 확정 — 아래는 잠정.
+
+cpu:
+  # Perf_CPU_Contention — 단일 범인 서비스가 모호(호스트 CPU 경합)하므로 type만 채점.
+  type: PERFORMANCE
+  type_keywords: [perf, cpu, contention, resource, latency, 성능, 자원, 부하, 지연]
+  service: UNKNOWN
+  service_optional: true
+
+kill_media:
+  # Svc_Kill_Media — media 서비스 종료.
+  type: SERVICE_DOWN
+  type_keywords: [kill, down, crash, unavailable, restart, 종료, 중단, 무응답, 죽, 재시작]
+  service: media
+  service_aliases: [media, media-service, mediaservice]
+
+code_media:
+  # Code_Stop_MediaService — media 서비스 코드 중단.
+  type: CODE_STOP
+  type_keywords: [code, stop, deploy, 배포, 중단, 코드]
+  service: media
+  service_aliases: [media, media-service, mediaservice]
