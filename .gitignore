@@ -24,3 +24,6 @@ docs/superpowers/
 eval/runs/
 eval/index.csv
 eval/fixtures/*.dup*.json
+
+# baseline 원본 로그(대용량, 일회성 입력) — 생성물 log_profile.json만 커밋
+app/services/baseline/_raw/

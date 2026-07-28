@@ -1,0 +1,785 @@
+[
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> post storage completed [req_id=<HEX>, post_id=<HEX>]",
+    "count": 399,
+    "first": "2025-11-03T22:05:04.006738",
+    "last": "2025-11-03T22:22:50.730336",
+    "sample": "[2025-Nov-03 22:05:04.006738] <info>: (ComposePostHandler.h:442:ComposePost) post storage completed [req_id=644931833795737216, post_id=1230496223587717120]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> <*> timeline update completed [req_id=<HEX>]",
+    "count": 399,
+    "first": "2025-11-03T22:05:04.015026",
+    "last": "2025-11-03T22:22:50.734701",
+    "sample": "[2025-Nov-03 22:05:04.015026] <info>: (ComposePostHandler.h:448:ComposePost) home timeline update completed [req_id=644931833795737216]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:372:ComposePost) start process compose post request [req_id=<HEX>, user=6T1]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.994874",
+    "last": "2025-11-03T22:22:50.725722",
+    "sample": "[2025-Nov-03 22:05:03.994874] <info>: (ComposePostHandler.h:372:ComposePost) start process compose post request [req_id=644931833795737216, user=6T1]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:402:ComposePost) get unique id: <HEX> [req_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.998284",
+    "last": "2025-11-03T22:22:50.727007",
+    "sample": "[2025-Nov-03 22:05:03.998284] <info>: (ComposePostHandler.h:402:ComposePost) get unique id: 1230496223587717120 [req_id=644931833795737216]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:405:ComposePost) get creator info [req_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.998387",
+    "last": "2025-11-03T22:22:50.727113",
+    "sample": "[2025-Nov-03 22:05:03.998387] <info>: (ComposePostHandler.h:405:ComposePost) get creator info [req_id=644931833795737216]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:408:ComposePost) get media info, media count: 0 [req_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.998593",
+    "last": "2025-11-03T22:22:50.727175",
+    "sample": "[2025-Nov-03 22:05:03.998593] <info>: (ComposePostHandler.h:408:ComposePost) get media info, media count: 0 [req_id=644931833795737216]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:414:ComposePost) get text info, text length: 16, user mention count: 0 [req_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.004044",
+    "last": "2025-11-03T22:22:50.728727",
+    "sample": "[2025-Nov-03 22:05:04.004044] <info>: (ComposePostHandler.h:414:ComposePost) get text info, text length: 16, user mention count: 0 [req_id=644931833795737216]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:264:_UploadPostHelper) start upload post to storage service [req_id=<HEX>, post_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.004281",
+    "last": "2025-11-03T22:22:50.728907",
+    "sample": "[2025-Nov-03 22:05:04.004281] <info>: (ComposePostHandler.h:264:_UploadPostHelper) start upload post to storage service [req_id=644931833795737216, post_id=1230496223587717120]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:295:_UploadPostHelper) finish upload post to storage service [req_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.006593",
+    "last": "2025-11-03T22:22:50.730209",
+    "sample": "[2025-Nov-03 22:05:04.006593] <info>: (ComposePostHandler.h:295:_UploadPostHelper) finish upload post to storage service [req_id=644931833795737216]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:451:ComposePost) compose post request completed [req_id=<HEX>, post_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.015105",
+    "last": "2025-11-03T22:22:50.734747",
+    "sample": "[2025-Nov-03 22:05:04.015105] <info>: (ComposePostHandler.h:451:ComposePost) compose post request completed [req_id=644931833795737216, post_id=1230496223587717120]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostService.cpp:117:main) Starting the compose-post-service server ...",
+    "count": 1,
+    "first": "2025-11-03T22:03:07.084255",
+    "last": "2025-11-03T22:03:07.084255",
+    "sample": "[2025-Nov-03 22:03:07.084255] <info>: (ComposePostService.cpp:117:main) Starting the compose-post-service server ..."
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:286:_UploadPostHelper) post storage completed [req_id=<HEX>, post_id=<HEX>]",
+    "count": 1,
+    "first": "2025-11-03T22:05:04.006515",
+    "last": "2025-11-03T22:05:04.006515",
+    "sample": "[2025-Nov-03 22:05:04.006515] <info>: (ComposePostHandler.h:286:_UploadPostHelper) post storage completed [req_id=644931833795737216, post_id=1230496223587717120]"
+  },
+  {
+    "service": "composepost",
+    "level": "INFO",
+    "template": "<TS> <info>: (ComposePostHandler.h:445:ComposePost) user timeline update completed [req_id=<HEX>]",
+    "count": 1,
+    "first": "2025-11-03T22:05:04.009432",
+    "last": "2025-11-03T22:05:04.009432",
+    "sample": "[2025-Nov-03 22:05:04.009432] <info>: (ComposePostHandler.h:445:ComposePost) user timeline update completed [req_id=644931833795737216]"
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (HomeTimelineHandler.h:222:ReadHomeTimeline) Start reading home timeline [req_id=<HEX>, <*> <*> <*>",
+    "count": 999,
+    "first": "2025-11-03T22:05:04.032344",
+    "last": "2025-11-03T22:22:50.751902",
+    "sample": "[2025-Nov-03 22:05:04.032344] <info>: (HomeTimelineHandler.h:222:ReadHomeTimeline) Start reading home timeline [req_id=762478757347115008, user_id=963, start=131, stop=457]"
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> Home timeline <*> completed [req_id=<HEX>, <*>",
+    "count": 399,
+    "first": "2025-11-03T22:05:04.034363",
+    "last": "2025-11-03T22:22:50.745015",
+    "sample": "[2025-Nov-03 22:05:04.034363] <info>: (HomeTimelineHandler.h:288:ReadHomeTimeline) Home timeline read completed [req_id=762478757347115008, user_id=963]"
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (HomeTimelineHandler.h:103:WriteHomeTimeline) Start writing home timeline [req_id=<HEX>, user_id=466, post_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.010871",
+    "last": "2025-11-03T22:22:50.732246",
+    "sample": "[2025-Nov-03 22:05:04.010871] <info>: (HomeTimelineHandler.h:103:WriteHomeTimeline) Start writing home timeline [req_id=644931833795737216, user_id=466, post_id=1230496223587717120]"
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (HomeTimelineHandler.h:136:WriteHomeTimeline) Successfully got followers [req_id=<HEX>, user_id=466, followers_count=33]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.013576",
+    "last": "2025-11-03T22:22:50.733663",
+    "sample": "[2025-Nov-03 22:05:04.013576] <info>: (HomeTimelineHandler.h:136:WriteHomeTimeline) Successfully got followers [req_id=644931833795737216, user_id=466, followers_count=33]"
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (HomeTimelineHandler.h:157:WriteHomeTimeline) Successfully wrote to redis home timeline [req_id=<HEX>, post_id=<HEX>, followers_count=33]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.014796",
+    "last": "2025-11-03T22:22:50.734462",
+    "sample": "[2025-Nov-03 22:05:04.014796] <info>: (HomeTimelineHandler.h:157:WriteHomeTimeline) Successfully wrote to redis home timeline [req_id=644931833795737216, post_id=1230496223587717120, followers_count=33]"
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (HomeTimelineHandler.h:285:ReadHomeTimeline) Successfully got posts from post-storage-service [req_id=<HEX>, user_id=963, post_count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.034304",
+    "last": "2025-11-03T22:22:50.744974",
+    "sample": "[2025-Nov-03 22:05:04.034304] <info>: (HomeTimelineHandler.h:285:ReadHomeTimeline) Successfully got posts from post-storage-service [req_id=762478757347115008, user_id=963, post_count=0]"
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (HomeTimelineService.cpp:148:main) Starting the home-timeline-service server...",
+    "count": 1,
+    "first": "2025-11-03T22:03:10.078951",
+    "last": "2025-11-03T22:03:10.078951",
+    "sample": "[2025-Nov-03 22:03:10.078951] <info>: (HomeTimelineService.cpp:148:main) Starting the home-timeline-service server..."
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (HomeTimelineHandler.h:215:WriteHomeTimeline) Home timeline write completed [req_id=<HEX>, post_id=<HEX>]",
+    "count": 1,
+    "first": "2025-11-03T22:05:04.014865",
+    "last": "2025-11-03T22:05:04.014865",
+    "sample": "[2025-Nov-03 22:05:04.014865] <info>: (HomeTimelineHandler.h:215:WriteHomeTimeline) Home timeline write completed [req_id=644931833795737216, post_id=1230496223587717120]"
+  },
+  {
+    "service": "hometimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (HomeTimelineHandler.h:222:ReadHomeTimeline) Start reading home timeline [req_id=<HEX>, user_id=669, start=197, stop=53]",
+    "count": 1,
+    "first": "2025-11-03T22:05:04.025900",
+    "last": "2025-11-03T22:05:04.025900",
+    "sample": "[2025-Nov-03 22:05:04.025900] <info>: (HomeTimelineHandler.h:222:ReadHomeTimeline) Start reading home timeline [req_id=642268455944266624, user_id=669, start=197, stop=53]"
+  },
+  {
+    "service": "media",
+    "level": "INFO",
+    "template": "<TS> <info>: (MediaHandler.h:36:ComposeMedia) Received ComposeMedia request [req_id=<HEX>, media_ids count=0, media_types count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.997535",
+    "last": "2025-11-03T22:22:50.726475",
+    "sample": "[2025-Nov-03 22:05:03.997535] <info>: (MediaHandler.h:36:ComposeMedia) Received ComposeMedia request [req_id=644931833795737216, media_ids count=0, media_types count=0]"
+  },
+  {
+    "service": "media",
+    "level": "INFO",
+    "template": "<TS> <info>: (MediaHandler.h:58:ComposeMedia) ComposeMedia parameter validation passed [req_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.998221",
+    "last": "2025-11-03T22:22:50.726609",
+    "sample": "[2025-Nov-03 22:05:03.998221] <info>: (MediaHandler.h:58:ComposeMedia) ComposeMedia parameter validation passed [req_id=644931833795737216]"
+  },
+  {
+    "service": "media",
+    "level": "INFO",
+    "template": "<TS> <info>: (MediaHandler.h:68:ComposeMedia) ComposeMedia completed [req_id=<HEX>, return media count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.998326",
+    "last": "2025-11-03T22:22:50.726637",
+    "sample": "[2025-Nov-03 22:05:03.998326] <info>: (MediaHandler.h:68:ComposeMedia) ComposeMedia completed [req_id=644931833795737216, return media count=0]"
+  },
+  {
+    "service": "media",
+    "level": "INFO",
+    "template": "<TS> <info>: (MediaService.cpp:44:main) Starting the media-service server...",
+    "count": 1,
+    "first": "2025-11-03T22:03:13.065368",
+    "last": "2025-11-03T22:03:13.065368",
+    "sample": "[2025-Nov-03 22:03:13.065368] <info>: (MediaService.cpp:44:main) Starting the media-service server..."
+  },
+  {
+    "service": "poststorage",
+    "level": "INFO",
+    "template": "<TS> <info>: (PostStorageHandler.h:367:ReadPosts) Received ReadPosts request [req_id=<HEX>, post_ids count=0]",
+    "count": 600,
+    "first": "2025-11-03T22:05:03.980453",
+    "last": "2025-11-03T22:22:50.744802",
+    "sample": "[2025-Nov-03 22:05:03.980453] <info>: (PostStorageHandler.h:367:ReadPosts) Received ReadPosts request [req_id=43229393605794440, post_ids count=0]"
+  },
+  {
+    "service": "poststorage",
+    "level": "INFO",
+    "template": "<TS> <info>: (PostStorageHandler.h:52:StorePost) Received StorePost request [req_id=<HEX>, post_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.005531",
+    "last": "2025-11-03T22:22:50.729228",
+    "sample": "[2025-Nov-03 22:05:04.005531] <info>: (PostStorageHandler.h:52:StorePost) Received StorePost request [req_id=644931833795737216, post_id=1230496223587717120]"
+  },
+  {
+    "service": "poststorage",
+    "level": "INFO",
+    "template": "<TS> <info>: (PostStorageHandler.h:164:StorePost) Post inserted into MongoDB successfully [req_id=<HEX>, post_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.006365",
+    "last": "2025-11-03T22:22:50.729994",
+    "sample": "[2025-Nov-03 22:05:04.006365] <info>: (PostStorageHandler.h:164:StorePost) Post inserted into MongoDB successfully [req_id=644931833795737216, post_id=1230496223587717120]"
+  },
+  {
+    "service": "poststorage",
+    "level": "INFO",
+    "template": "<TS> <info>: (PostStorageService.cpp:88:main) Starting the post-storage-service server...",
+    "count": 1,
+    "first": "2025-11-03T22:03:11.064817",
+    "last": "2025-11-03T22:03:11.064817",
+    "sample": "[2025-Nov-03 22:03:11.064817] <info>: (PostStorageService.cpp:88:main) Starting the post-storage-service server..."
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> <*> operation completed [req_id=<HEX>, <*> <*>",
+    "count": 75647,
+    "first": "2025-11-03T22:04:14.834561",
+    "last": "2025-11-03T22:22:50.722297",
+    "sample": "[2025-Nov-03 22:04:14.834561] <info>: (SocialGraphHandler.h:906:FollowWithUsername) FollowWithUsername operation completed [req_id=1073796899437102464, user_name=username_71, followee_name=username_0]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> Received <*> request [req_id=<HEX>, <*> <*>",
+    "count": 75634,
+    "first": "2025-11-03T22:04:14.825252",
+    "last": "2025-11-03T22:22:50.720920",
+    "sample": "[2025-Nov-03 22:04:14.825252] <info>: (SocialGraphHandler.h:106:Follow) Received Follow request [req_id=460880222416584448, user_id=87, followee_id=0]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=<HEX>, <*>",
+    "count": 958,
+    "first": "2025-11-03T22:04:14.128405",
+    "last": "2025-11-03T22:04:14.703951",
+    "sample": "[2025-Nov-03 22:04:14.128405] <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=81173017791043360, user_id=5]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:830:InsertUser) InsertUser operation completed [req_id=<HEX>, <*>",
+    "count": 958,
+    "first": "2025-11-03T22:04:14.131305",
+    "last": "2025-11-03T22:04:14.704391",
+    "sample": "[2025-Nov-03 22:04:14.131305] <info>: (SocialGraphHandler.h:830:InsertUser) InsertUser operation completed [req_id=81173017791043360, user_id=5]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> Received <*> request [req_id=<HEX>, <*>",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.012154",
+    "last": "2025-11-03T22:22:50.732500",
+    "sample": "[2025-Nov-03 22:05:04.012154] <info>: (SocialGraphHandler.h:492:GetFollowers) Received GetFollowers request [req_id=644931833795737216, user_id=466]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:625:GetFollowers) GetFollowers completed [req_id=<HEX>, user_id=466, followers_count=33]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.013286",
+    "last": "2025-11-03T22:22:50.733494",
+    "sample": "[2025-Nov-03 22:05:04.013286] <info>: (SocialGraphHandler.h:625:GetFollowers) GetFollowers completed [req_id=644931833795737216, user_id=466, followers_count=33]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:838:FollowWithUsername) Received FollowWithUsername request [req_id=<HEX>, <*> <*>",
+    "count": 13,
+    "first": "2025-11-03T22:04:14.806441",
+    "last": "2025-11-03T22:04:14.823864",
+    "sample": "[2025-Nov-03 22:04:14.806441] <info>: (SocialGraphHandler.h:838:FollowWithUsername) Received FollowWithUsername request [req_id=396203350205914816, user_name=username_0, followee_name=username_15]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphService.cpp:150:main) Starting the social-graph-service server ...",
+    "count": 1,
+    "first": "2025-11-03T22:03:13.222340",
+    "last": "2025-11-03T22:03:13.222340",
+    "sample": "[2025-Nov-03 22:03:13.222340] <info>: (SocialGraphService.cpp:150:main) Starting the social-graph-service server ..."
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=<HEX>, user_id=0]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.019134",
+    "last": "2025-11-03T22:04:14.019134",
+    "sample": "[2025-Nov-03 22:04:14.019134] <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=950153972436301696, user_id=0]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> <*> <*> <*> [req_id=<HEX>, user_id=0]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.020180",
+    "last": "2025-11-03T22:04:14.020180",
+    "sample": "[2025-Nov-03 22:04:14.020180] <info>: (SocialGraphHandler.h:830:InsertUser) InsertUser operation completed [req_id=950153972436301696, user_id=0]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=<HEX>, user_id=1]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.024555",
+    "last": "2025-11-03T22:04:14.024555",
+    "sample": "[2025-Nov-03 22:04:14.024555] <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=262918366419883808, user_id=1]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> <*> <*> <*> [req_id=<HEX>, user_id=1]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.025955",
+    "last": "2025-11-03T22:04:14.025955",
+    "sample": "[2025-Nov-03 22:04:14.025955] <info>: (SocialGraphHandler.h:830:InsertUser) InsertUser operation completed [req_id=262918366419883808, user_id=1]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=<HEX>, user_id=15]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.123317",
+    "last": "2025-11-03T22:04:14.123317",
+    "sample": "[2025-Nov-03 22:04:14.123317] <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=666109283444434816, user_id=15]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> <*> <*> <*> [req_id=<HEX>, user_id=15]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.126772",
+    "last": "2025-11-03T22:04:14.126772",
+    "sample": "[2025-Nov-03 22:04:14.126772] <info>: (SocialGraphHandler.h:830:InsertUser) InsertUser operation completed [req_id=666109283444434816, user_id=15]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=<HEX>, user_id=19]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.128112",
+    "last": "2025-11-03T22:04:14.128112",
+    "sample": "[2025-Nov-03 22:04:14.128112] <info>: (SocialGraphHandler.h:779:InsertUser) Received InsertUser request [req_id=992062208314831360, user_id=19]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:830:InsertUser) InsertUser operation completed [req_id=<HEX>, user_id=19]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.129280",
+    "last": "2025-11-03T22:04:14.129280",
+    "sample": "[2025-Nov-03 22:04:14.129280] <info>: (SocialGraphHandler.h:830:InsertUser) InsertUser operation completed [req_id=992062208314831360, user_id=19]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:838:FollowWithUsername) Received FollowWithUsername request [req_id=<HEX>, user_name=username_102, followee_name=username_0]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.806224",
+    "last": "2025-11-03T22:04:14.806224",
+    "sample": "[2025-Nov-03 22:04:14.806224] <info>: (SocialGraphHandler.h:838:FollowWithUsername) Received FollowWithUsername request [req_id=683497441307874176, user_name=username_102, followee_name=username_0]"
+  },
+  {
+    "service": "socialgraph",
+    "level": "INFO",
+    "template": "<TS> <info>: (SocialGraphHandler.h:294:Follow) Follow operation completed [req_id=<HEX>, user_id=71, followee_id=0]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.834482",
+    "last": "2025-11-03T22:04:14.834482",
+    "sample": "[2025-Nov-03 22:04:14.834482] <info>: (SocialGraphHandler.h:294:Follow) Follow operation completed [req_id=1073796899437102464, user_id=71, followee_id=0]"
+  },
+  {
+    "service": "text",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> <*> to <*> succeeded [req_id=<HEX>, <*> count=0]",
+    "count": 399,
+    "first": "2025-11-03T22:05:04.003250",
+    "last": "2025-11-03T22:22:50.728184",
+    "sample": "[2025-Nov-03 22:05:04.003250] <info>: (TextHandler.h:140:operator()) ComposeUserMentions to user-mention-service succeeded [req_id=644931833795737216, mention count=0]"
+  },
+  {
+    "service": "text",
+    "level": "INFO",
+    "template": "<TS> <info>: (TextHandler.h:45:ComposeText) Received ComposeText request [req_id=<HEX>, text length=16]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.997532",
+    "last": "2025-11-03T22:22:50.726244",
+    "sample": "[2025-Nov-03 22:05:03.997532] <info>: (TextHandler.h:45:ComposeText) Received ComposeText request [req_id=644931833795737216, text length=16]"
+  },
+  {
+    "service": "text",
+    "level": "INFO",
+    "template": "<TS> <info>: (TextHandler.h:77:ComposeText) Extracted mentions and urls [req_id=<HEX>, mention count=0, url count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.999145",
+    "last": "2025-11-03T22:22:50.727204",
+    "sample": "[2025-Nov-03 22:05:03.999145] <info>: (TextHandler.h:77:ComposeText) Extracted mentions and urls [req_id=644931833795737216, mention count=0, url count=0]"
+  },
+  {
+    "service": "text",
+    "level": "INFO",
+    "template": "<TS> <info>: (TextHandler.h:180:ComposeText) ComposeText completed [req_id=<HEX>, user_mentions count=0, urls count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.003670",
+    "last": "2025-11-03T22:22:50.728496",
+    "sample": "[2025-Nov-03 22:05:04.003670] <info>: (TextHandler.h:180:ComposeText) ComposeText completed [req_id=644931833795737216, user_mentions count=0, urls count=0]"
+  },
+  {
+    "service": "text",
+    "level": "INFO",
+    "template": "<TS> <info>: (TextService.cpp:65:main) Starting the text-service server...",
+    "count": 1,
+    "first": "2025-11-03T22:03:12.674325",
+    "last": "2025-11-03T22:03:12.674325",
+    "sample": "[2025-Nov-03 22:03:12.674325] <info>: (TextService.cpp:65:main) Starting the text-service server..."
+  },
+  {
+    "service": "text",
+    "level": "INFO",
+    "template": "<TS> <info>: (TextHandler.h:105:operator()) ComposeUrls to url-shorten-service succeeded [req_id=<HEX>, url count=0]",
+    "count": 1,
+    "first": "2025-11-03T22:05:04.003181",
+    "last": "2025-11-03T22:05:04.003181",
+    "sample": "[2025-Nov-03 22:05:04.003181] <info>: (TextHandler.h:105:operator()) ComposeUrls to url-shorten-service succeeded [req_id=644931833795737216, url count=0]"
+  },
+  {
+    "service": "uniqueid",
+    "level": "INFO",
+    "template": "<TS> <info>: (UniqueIdHandler.h:65:ComposeUniqueId) Received ComposeUniqueId request [req_id=<HEX>, post_type=9]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.997342",
+    "last": "2025-11-03T22:22:50.726446",
+    "sample": "[2025-Nov-03 22:05:03.997342] <info>: (UniqueIdHandler.h:65:ComposeUniqueId) Received ComposeUniqueId request [req_id=644931833795737216, post_type=9]"
+  },
+  {
+    "service": "uniqueid",
+    "level": "INFO",
+    "template": "<TS> <info>: (UniqueIdHandler.h:85:ComposeUniqueId) ComposeUniqueId timestamp and counter [req_id=<HEX>, timestamp=<HEX>, counter=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.997756",
+    "last": "2025-11-03T22:22:50.726633",
+    "sample": "[2025-Nov-03 22:05:03.997756] <info>: (UniqueIdHandler.h:85:ComposeUniqueId) ComposeUniqueId timestamp and counter [req_id=644931833795737216, timestamp=247442703997, counter=0]"
+  },
+  {
+    "service": "uniqueid",
+    "level": "INFO",
+    "template": "<TS> <info>: (UniqueIdHandler.h:150:GetMachineId) MAC address = 02:42:ac:<TS>",
+    "count": 1,
+    "first": "2025-11-03T22:03:11.236359",
+    "last": "2025-11-03T22:03:11.236359",
+    "sample": "[2025-Nov-03 22:03:11.236359] <info>: (UniqueIdHandler.h:150:GetMachineId) MAC address = 02:42:ac:17:00:19"
+  },
+  {
+    "service": "uniqueid",
+    "level": "INFO",
+    "template": "<TS> <info>: (UniqueIdService.cpp:56:main) machine_id = 111",
+    "count": 1,
+    "first": "2025-11-03T22:03:11.236802",
+    "last": "2025-11-03T22:03:11.236802",
+    "sample": "[2025-Nov-03 22:03:11.236802] <info>: (UniqueIdService.cpp:56:main) machine_id = 111"
+  },
+  {
+    "service": "uniqueid",
+    "level": "INFO",
+    "template": "<TS> <info>: (UniqueIdService.cpp:67:main) Starting the unique-id-service server ...",
+    "count": 1,
+    "first": "2025-11-03T22:03:11.236921",
+    "last": "2025-11-03T22:03:11.236921",
+    "sample": "[2025-Nov-03 22:03:11.236921] <info>: (UniqueIdService.cpp:67:main) Starting the unique-id-service server ..."
+  },
+  {
+    "service": "urlshorten",
+    "level": "INFO",
+    "template": "<TS> <info>: (UrlShortenHandler.h:75:ComposeUrls) Received ComposeUrls request [req_id=<HEX>, url count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.002584",
+    "last": "2025-11-03T22:22:50.727558",
+    "sample": "[2025-Nov-03 22:05:04.002584] <info>: (UrlShortenHandler.h:75:ComposeUrls) Received ComposeUrls request [req_id=644931833795737216, url count=0]"
+  },
+  {
+    "service": "urlshorten",
+    "level": "INFO",
+    "template": "<TS> <info>: (UrlShortenHandler.h:174:ComposeUrls) ComposeUrls completed [req_id=<HEX>, return count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.002922",
+    "last": "2025-11-03T22:22:50.727799",
+    "sample": "[2025-Nov-03 22:05:04.002922] <info>: (UrlShortenHandler.h:174:ComposeUrls) ComposeUrls completed [req_id=644931833795737216, return count=0]"
+  },
+  {
+    "service": "urlshorten",
+    "level": "INFO",
+    "template": "<TS> <info>: (UrlShortenService.cpp:89:main) Starting the url-shorten-service server...",
+    "count": 1,
+    "first": "2025-11-03T22:03:13.284216",
+    "last": "2025-11-03T22:03:13.284216",
+    "sample": "[2025-Nov-03 22:03:13.284216] <info>: (UrlShortenService.cpp:89:main) Starting the url-shorten-service server..."
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:762:GetUserId) Received GetUserId request [req_id=<HEX>, <*>",
+    "count": 75247,
+    "first": "2025-11-03T22:04:14.810867",
+    "last": "2025-11-03T22:04:53.484964",
+    "sample": "[2025-Nov-03 22:04:14.810867] <info>: (UserHandler.h:762:GetUserId) Received GetUserId request [req_id=410416351467819584, username=username_1]"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:907:GetUserId) GetUserId completed [req_id=<HEX>, <*>",
+    "count": 75247,
+    "first": "2025-11-03T22:04:14.822055",
+    "last": "2025-11-03T22:04:53.485672",
+    "sample": "[2025-Nov-03 22:04:14.822055] <info>: (UserHandler.h:907:GetUserId) GetUserId completed [req_id=410416351467819584, username=username_1]"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:123:RegisterUserWithId) Received RegisterUserWithId request [req_id=<HEX>, <*> <*>",
+    "count": 962,
+    "first": "2025-11-03T22:04:14.023237",
+    "last": "2025-11-03T22:05:03.953144",
+    "sample": "[2025-Nov-03 22:04:14.023237] <info>: (UserHandler.h:123:RegisterUserWithId) Received RegisterUserWithId request [req_id=262918366419883808, username=username_1, user_id=1]"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:233:RegisterUserWithId) RegisterUserWithId completed [req_id=<HEX>, <*> <*>",
+    "count": 961,
+    "first": "2025-11-03T22:04:14.026145",
+    "last": "2025-11-03T22:04:14.704564",
+    "sample": "[2025-Nov-03 22:04:14.026145] <info>: (UserHandler.h:233:RegisterUserWithId) RegisterUserWithId completed [req_id=262918366419883808, username=username_1, user_id=1]"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> Received <*> request [req_id=<HEX>, <*> <*>",
+    "count": 399,
+    "first": "2025-11-03T22:05:03.997439",
+    "last": "2025-11-03T22:22:50.726331",
+    "sample": "[2025-Nov-03 22:05:03.997439] <info>: (UserHandler.h:548:ComposeCreatorWithUserId) Received ComposeCreatorWithUserId request [req_id=644931833795737216, username=6T1, user_id=466]"
+  },
+  {
+    "service": "user",
+    "level": "ERROR",
+    "template": "<TS> <error>: (UserHandler.h:190:RegisterUserWithId) Failed to insert user j1 to MongoDB: E11000 duplicate key error collection: user.user index: user_id_1 dup key: { user_id: 444 }",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.956608",
+    "last": "2025-11-03T22:22:50.703163",
+    "sample": "[2025-Nov-03 22:05:03.956608] <error>: (UserHandler.h:190:RegisterUserWithId) Failed to insert user j1 to MongoDB: E11000 duplicate key error collection: user.user index: user_id_1 dup key: { user_id: 444 }"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> <*> completed [req_id=<HEX>, <*> <*>",
+    "count": 200,
+    "first": "2025-11-03T22:05:03.997687",
+    "last": "2025-11-03T22:22:50.726490",
+    "sample": "[2025-Nov-03 22:05:03.997687] <info>: (UserHandler.h:564:ComposeCreatorWithUserId) ComposeCreatorWithUserId completed [req_id=644931833795737216, username=6T1, user_id=466]"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:944:GetMachineId) MAC address = 02:42:ac:17:00:1c",
+    "count": 1,
+    "first": "2025-11-03T22:03:12.634283",
+    "last": "2025-11-03T22:03:12.634283",
+    "sample": "[2025-Nov-03 22:03:12.634283] <info>: (UserHandler.h:944:GetMachineId) MAC address = 02:42:ac:17:00:1c"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserService.cpp:70:main) machine_id = 13b",
+    "count": 1,
+    "first": "2025-11-03T22:03:12.634668",
+    "last": "2025-11-03T22:03:12.634668",
+    "sample": "[2025-Nov-03 22:03:12.634668] <info>: (UserService.cpp:70:main) machine_id = 13b"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserService.cpp:101:main) Starting the user-service server ...",
+    "count": 1,
+    "first": "2025-11-03T22:03:13.074689",
+    "last": "2025-11-03T22:03:13.074689",
+    "sample": "[2025-Nov-03 22:03:13.074689] <info>: (UserService.cpp:101:main) Starting the user-service server ..."
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:123:RegisterUserWithId) Received RegisterUserWithId request [req_id=<HEX>, username=username_0, user_id=0]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.015075",
+    "last": "2025-11-03T22:04:14.015075",
+    "sample": "[2025-Nov-03 22:04:14.015075] <info>: (UserHandler.h:123:RegisterUserWithId) Received RegisterUserWithId request [req_id=950153972436301696, username=username_0, user_id=0]"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:233:RegisterUserWithId) RegisterUserWithId completed [req_id=<HEX>, username=username_0, user_id=0]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.020400",
+    "last": "2025-11-03T22:04:14.020400",
+    "sample": "[2025-Nov-03 22:04:14.020400] <info>: (UserHandler.h:233:RegisterUserWithId) RegisterUserWithId completed [req_id=950153972436301696, username=username_0, user_id=0]"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:762:GetUserId) Received GetUserId request [req_id=<HEX>, username=username_102]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.809083",
+    "last": "2025-11-03T22:04:14.809083",
+    "sample": "[2025-Nov-03 22:04:14.809083] <info>: (UserHandler.h:762:GetUserId) Received GetUserId request [req_id=683497441307874176, username=username_102]"
+  },
+  {
+    "service": "user",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserHandler.h:907:GetUserId) GetUserId completed [req_id=<HEX>, username=username_87]",
+    "count": 1,
+    "first": "2025-11-03T22:04:14.821960",
+    "last": "2025-11-03T22:04:14.821960",
+    "sample": "[2025-Nov-03 22:04:14.821960] <info>: (UserHandler.h:907:GetUserId) GetUserId completed [req_id=460880222416584448, username=username_87]"
+  },
+  {
+    "service": "usermention",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserMentionHandler.h:44:ComposeUserMentions) Received ComposeUserMentions request [req_id=<HEX>, usernames count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.002544",
+    "last": "2025-11-03T22:22:50.727618",
+    "sample": "[2025-Nov-03 22:05:04.002544] <info>: (UserMentionHandler.h:44:ComposeUserMentions) Received ComposeUserMentions request [req_id=644931833795737216, usernames count=0]"
+  },
+  {
+    "service": "usermention",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserMentionHandler.h:236:ComposeUserMentions) ComposeUserMentions MongoDB hit [req_id=<HEX>, total user_mentions count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.002977",
+    "last": "2025-11-03T22:22:50.727915",
+    "sample": "[2025-Nov-03 22:05:04.002977] <info>: (UserMentionHandler.h:236:ComposeUserMentions) ComposeUserMentions MongoDB hit [req_id=644931833795737216, total user_mentions count=0]"
+  },
+  {
+    "service": "usermention",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserMentionHandler.h:242:ComposeUserMentions) ComposeUserMentions completed [req_id=<HEX>, return count=0]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.003030",
+    "last": "2025-11-03T22:22:50.727984",
+    "sample": "[2025-Nov-03 22:05:04.003030] <info>: (UserMentionHandler.h:242:ComposeUserMentions) ComposeUserMentions completed [req_id=644931833795737216, return count=0]"
+  },
+  {
+    "service": "usermention",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserMentionService.cpp:75:main) Starting the user-mention-service server...",
+    "count": 1,
+    "first": "2025-11-03T22:03:12.819820",
+    "last": "2025-11-03T22:03:12.819820",
+    "sample": "[2025-Nov-03 22:03:12.819820] <info>: (UserMentionService.cpp:75:main) Starting the user-mention-service server..."
+  },
+  {
+    "service": "usertimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: <*> Received <*> request [req_id=<HEX>, <*> <*> <*>",
+    "count": 997,
+    "first": "2025-11-03T22:05:04.007951",
+    "last": "2025-11-03T22:22:50.738128",
+    "sample": "[2025-Nov-03 22:05:04.007951] <info>: (UserTimelineHandler.h:94:WriteUserTimeline) Received WriteUserTimeline request [req_id=644931833795737216, user_id=466, post_id=1230496223587717120, timestamp=1762207503996]"
+  },
+  {
+    "service": "usertimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserTimelineHandler.h:366:ReadUserTimeline) ReadUserTimeline completed [req_id=<HEX>, <*> return count=0]",
+    "count": 399,
+    "first": "2025-11-03T22:05:04.021262",
+    "last": "2025-11-03T22:22:50.739386",
+    "sample": "[2025-Nov-03 22:05:04.021262] <info>: (UserTimelineHandler.h:366:ReadUserTimeline) ReadUserTimeline completed [req_id=179940748294950656, user_id=437, return count=0]"
+  },
+  {
+    "service": "usertimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserTimelineHandler.h:187:WriteUserTimeline) WriteUserTimeline completed [req_id=<HEX>, user_id=466, post_id=<HEX>]",
+    "count": 200,
+    "first": "2025-11-03T22:05:04.009236",
+    "last": "2025-11-03T22:22:50.731753",
+    "sample": "[2025-Nov-03 22:05:04.009236] <info>: (UserTimelineHandler.h:187:WriteUserTimeline) WriteUserTimeline completed [req_id=644931833795737216, user_id=466, post_id=1230496223587717120]"
+  },
+  {
+    "service": "usertimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserTimelineHandler.h:194:ReadUserTimeline) Received ReadUserTimeline request [req_id=<HEX>, <*> <*> <*>",
+    "count": 2,
+    "first": "2025-11-03T22:05:03.972004",
+    "last": "2025-11-03T22:05:03.976556",
+    "sample": "[2025-Nov-03 22:05:03.972004] <info>: (UserTimelineHandler.h:194:ReadUserTimeline) Received ReadUserTimeline request [req_id=260405883182383616, user_id=849, start=497, stop=-38443418]"
+  },
+  {
+    "service": "usertimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserTimelineService.cpp:155:main) Starting the user-timeline-service server...",
+    "count": 1,
+    "first": "2025-11-03T22:03:13.638132",
+    "last": "2025-11-03T22:03:13.638132",
+    "sample": "[2025-Nov-03 22:03:13.638132] <info>: (UserTimelineService.cpp:155:main) Starting the user-timeline-service server..."
+  },
+  {
+    "service": "usertimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserTimelineHandler.h:194:ReadUserTimeline) Received ReadUserTimeline request [req_id=<HEX>, user_id=31, start=-<HEX>, stop=232]",
+    "count": 1,
+    "first": "2025-11-03T22:05:03.967376",
+    "last": "2025-11-03T22:05:03.967376",
+    "sample": "[2025-Nov-03 22:05:03.967376] <info>: (UserTimelineHandler.h:194:ReadUserTimeline) Received ReadUserTimeline request [req_id=860304178040065024, user_id=31, start=-930050225, stop=232]"
+  },
+  {
+    "service": "usertimeline",
+    "level": "INFO",
+    "template": "<TS> <info>: (UserTimelineHandler.h:366:ReadUserTimeline) ReadUserTimeline completed [req_id=<HEX>, user_id=865, return count=0]",
+    "count": 1,
+    "first": "2025-11-03T22:05:03.981090",
+    "last": "2025-11-03T22:05:03.981090",
+    "sample": "[2025-Nov-03 22:05:03.981090] <info>: (UserTimelineHandler.h:366:ReadUserTimeline) ReadUserTimeline completed [req_id=43229393605794440, user_id=865, return count=0]"
+  }
+]
