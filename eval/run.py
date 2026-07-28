@@ -7,6 +7,7 @@
 실행(리포 루트에서):
     python -m eval.run                      # 픽스처가 있는 시나리오 전부, 1회씩
     python -m eval.run cpu --repeat 3       # cpu만 3회(LLM 비결정성 관찰)
+    python -m eval.run --serve              # 평가 후 뷰어 서버까지 (서빙만: python -m eval.serve)
 
 사전: OPENAI_API_KEY 등 .env 설정(실제 LLM 호출 = 실제 과금). 채점은 `eval/scoring.py`가
 있으면 자동 적용(없으면 결과만 기록).
@@ -164,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
         help="평가할 시나리오(기본: 픽스처가 있는 것 전부)",
     )
     parser.add_argument("--repeat", type=int, default=1, help="시나리오당 반복 횟수")
+    parser.add_argument("--serve", action="store_true", help="평가 후 뷰어 서버를 이어서 실행")
+    parser.add_argument("--port", type=int, default=8899, help="--serve 시 뷰어 포트 (기본 8899)")
     args = parser.parse_args(argv)
 
     # 픽스처가 있는 것만 남긴다(없으면 안내 후 스킵).
@@ -176,6 +179,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     asyncio.run(_main_async(available, args.repeat))
+    if args.serve:
+        from eval.serve import serve  # 지연 import — 서빙 안 하면 불필요
+
+        print(f"\n평가 완료 — 뷰어 서버를 띄웁니다 (:{args.port})")
+        serve(args.port)
     return 0
 
 
