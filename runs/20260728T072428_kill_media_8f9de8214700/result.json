@@ -1,0 +1,127 @@
+{
+  "type": "Data_Conflict",
+  "severity": "MID",
+  "service": "trace",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 `user` 서비스의 `RegisterUserWithId` 단계가 MongoDB `user.user` 컬렉션에 이미 존재하거나 동시에 생성된 `user_id=444`를 반복 삽입하려 한 것입니다. 직접 증거는 2026-Jul-27 08:35:40.866495부터 2026-Jul-27 08:38:26.998131까지 32회 발생한 `E11000 duplicate key error`, `user_id_1` 인덱스, `dup key: { user_id: 444 }`입니다. 다만 왜 동일 `user_id`가 반복 사용됐는지(ID 생성기 충돌, 요청 재시도, 멱등성 결함 등)는 제공 Evidence만으로 확정할 수 없어 가설로 남습니다. metric은 I/O·네트워크 부하 상승을 보조 정황으로 보여주지만 부분 관측이며, trace는 compose 경로 이상을 확인하지 못했습니다.",
+      "propagation": "`user` `RegisterUserWithId` → MongoDB `user.user`의 `user_id_1` unique index 충돌(`dup key: { user_id: 444 }`) → `E11000 duplicate key error`로 사용자 등록 요청 실패 32회. 동시간대 __node__ disk I/O 및 여러 서비스 network/cpu 상승은 관측되었지만, trace상 compose 경로는 err=0/http_status_code=200이라 이 경로 장애 전파는 확인되지 않았습니다.",
+      "confidence": 70
+    },
+    "summary": {
+      "highlight": "2026-Jul-27 08:35:40.866495 이후 `user` 서비스의 `RegisterUserWithId`가 MongoDB `user.user`의 `user_id_1` unique index에서 `user_id=444` 중복 삽입을 반복해 등록 오류 32건이 발생했습니다.",
+      "chips": [
+        "user",
+        "MongoDB",
+        "RegisterUserWithId",
+        "부분 관측",
+        "trace 정상"
+      ],
+      "errorTags": [
+        "E11000 duplicate key error",
+        "dup key: { user_id: 444 }",
+        "user_id_1"
+      ],
+      "neutralTags": [
+        "트리거 2026-07-27T08:35:31.961753",
+        "I/O·network 부하 상승",
+        "compose trace err=0/http_status_code=200",
+        "metric 부분 관측"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "user 서비스에서 2026-Jul-27 08:35:40.866495부터 2026-Jul-27 08:38:26.998131까지 `RegisterUserWithId` 단계의 MongoDB `E11000 duplicate key error`가 32회 발생했습니다. 원문상 중복 충돌 대상은 `user.user` 컬렉션의 `user_id_1` 인덱스이며 `dup key: { user_id: 444 }`로, 동일 user_id 삽입을 반복 시도한 패턴으로 보입니다. 이외의 주요 요청 흐름(예: composepost, hometimeline)은 같은 구간에 정상 완료 로그가 다수 보여, 현재 결론은 일부만 본 상태에서의 로그 기반 판단입니다.",
+        "source": "log"
+      },
+      "trace": {
+        "conclusion": "이상 징후 없음 — trace 집계에서 각 span의 err=0(에러 스팬 없음)이고, nginx /wrk2-api/post/compose 및 하위 compose 관련 호출들도 http_status_code=200이며 p50~max 지연이 모두 매우 낮게(대략 1~15ms대) 유지됨. 또한 제공된 exemplar 원문에서도 에러/경고 로그가 포함되지 않았음(예: [08:37:33.411438] nginx ... duration_ms=14.803 http_status_code=200).",
+        "source": "trace-agent(scan)",
+        "originService": "trace"
+      },
+      "metric": {
+        "conclusion": "트리거 시각 2026-07-27T08:35:31.961753 이후 약 4초~1분 사이에 여러 서비스의 container_cpu, container_network_receive/transmit, container_memory가 baseline 대비 함께 상승했습니다. 특히 composepost/hometimeline/usertimeline/poststorage/socialgraph/media 계열에서 네트워크 증가가 두드러졌고, __node__.system_disk_io_time는 0.007192→0.03579로 2026-07-27T08:35:36에 이탈, system_disk_write_bytes는 8.036e+04→6.531e+05로 2026-07-27T08:35:38에 상승했습니다. 반면 __node__.system_cpu_usage는 28.86→10.26으로 감소했고 system_memory_usage_percent도 8.046→8.517 수준의 소폭 변화라, 메트릭 관점에서는 CPU 고갈보다는 I/O·네트워크 중심의 광범위한 부하 증가가 핵심입니다. 다만 media 85/101, 다수 서비스 73/87처럼 부분 관측 상태이므로 결론의 확신도는 제한적입니다.",
+        "source": "baseline/incident 통계와 이상점 시각: __node__의 disk I/O 및 write bytes는 2026-07-27T08:35:36~2026-07-27T08:35:38에 먼저 이탈했고, 여러 컨테이너의 network/cpu는 2026-07-27T08:35:56~2026-07-27T08:36:14에 뒤이어 상승. 일부 시리즈는 baseline 안이거나 변화가 작았음."
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "user",
+          "errors": 32,
+          "type": "`RegisterUserWithId` MongoDB `E11000 duplicate key error`"
+        },
+        {
+          "service": "composepost",
+          "type": "메트릭상 네트워크/CPU 부하 상승, trace 오류는 미확인"
+        },
+        {
+          "service": "hometimeline",
+          "type": "메트릭상 네트워크/CPU 부하 상승, trace 오류는 미확인"
+        },
+        {
+          "service": "usertimeline",
+          "type": "메트릭상 네트워크/CPU 부하 상승, trace 오류는 미확인"
+        },
+        {
+          "service": "poststorage",
+          "type": "메트릭상 네트워크/CPU 부하 상승, trace 오류는 미확인"
+        },
+        {
+          "service": "socialgraph",
+          "type": "메트릭상 네트워크/CPU 부하 상승, trace 오류는 미확인"
+        },
+        {
+          "service": "media",
+          "type": "메트릭상 네트워크/CPU 부하 상승, trace 오류는 미확인"
+        },
+        {
+          "service": "__node__",
+          "type": "disk I/O 및 write bytes 상승"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "log 오류 구간",
+          "value": "2026-Jul-27 08:35:40.866495 ~ 2026-Jul-27 08:38:26.998131, `E11000 duplicate key error` 32회"
+        },
+        {
+          "label": "중복 키 대상",
+          "value": "MongoDB `user.user` 컬렉션 `user_id_1` 인덱스, `dup key: { user_id: 444 }`"
+        },
+        {
+          "label": "__node__.system_disk_io_time",
+          "value": "0.007192→0.03579, 2026-07-27T08:35:36 이탈"
+        },
+        {
+          "label": "__node__.system_disk_write_bytes",
+          "value": "8.036e+04→6.531e+05, 2026-07-27T08:35:38 상승"
+        },
+        {
+          "label": "컨테이너 부하",
+          "value": "composepost/hometimeline/usertimeline/poststorage/socialgraph/media 계열 network/cpu가 2026-07-27T08:35:56~2026-07-27T08:36:14 뒤이어 상승"
+        },
+        {
+          "label": "trace 상태",
+          "value": "err=0, nginx `/wrk2-api/post/compose` 및 하위 compose 호출 http_status_code=200, 대략 1~15ms대 지연"
+        },
+        {
+          "label": "관측 제한",
+          "value": "metric은 media 85/101, 다수 서비스 73/87 등 부분 관측이며 log 결론도 일부만 본 상태"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "MongoDB `user.user` 컬렉션에서 `user_id: 444` 문서와 `user_id_1` 인덱스 상태를 확인해 이미 생성된 정상 사용자 레코드인지, 중복/부분 생성 레코드인지 판별합니다.",
+        "`user` 서비스 로그에서 2026-Jul-27 08:35:40.866495 ~ 2026-Jul-27 08:38:26.998131 사이 `RegisterUserWithId` 호출의 요청 ID, 클라이언트, 재시도 여부, 입력 `user_id`를 추적해 동일 요청 반복인지 ID 생성기 충돌인지 구분합니다.",
+        "장애 완화 전까지 `user_id=444`를 포함한 동일 등록 요청의 반복 재시도를 차단하거나 큐/작업자가 있다면 해당 메시지를 격리·dedupe합니다.",
+        "`RegisterUserWithId` 구현에서 `user_id` 생성/할당 로직, 고정값 또는 시드 재사용, 동시성 경쟁, 실패 후 재시도 시 같은 `user_id`를 재사용하는 경로를 점검합니다.",
+        "MongoDB insert 실패 시 `E11000 duplicate key error`를 단순 재시도하지 않도록, 기존 사용자 반환/새 ID 재생성/명시적 409 응답 등 멱등한 처리로 수정합니다.",
+        "수정 후 등록 API에 대해 중복 요청·동시 요청 테스트를 수행하고, 동일 `user_id` 중복 삽입이 재현되지 않는지 확인합니다.",
+        "완화 이후 __node__의 `system_disk_io_time`, `system_disk_write_bytes`와 composepost/hometimeline/usertimeline/poststorage/socialgraph/media 계열 네트워크 지표가 2026-07-27T08:35:36~2026-07-27T08:36:14의 상승 구간 대비 정상화되는지 확인합니다."
+      ],
+      "recovery": "`user` 등록 경로에서 `user_id=444` 중복 삽입 반복을 즉시 중단하고, `RegisterUserWithId`의 ID 생성·재시도·멱등 처리 결함을 확인/수정한 뒤 등록 경로를 재검증합니다."
+    }
+  }
+}

@@ -1,0 +1,4 @@
+ts,scenario,set_hash,report_model,pred_type,pred_service,pred_severity,correct,latency_s,runs_path
+20260728T072325,cpu,8f9de8214700,gpt-5.5-2026-04-23,Resource_Exhaustion,__node__,MID,O,62.89,runs/20260728T072325_cpu_8f9de8214700
+20260728T072428,kill_media,8f9de8214700,gpt-5.5-2026-04-23,Data_Conflict,trace,MID,X,70.52,runs/20260728T072428_kill_media_8f9de8214700
+20260728T072539,code_media,8f9de8214700,gpt-5.5-2026-04-23,Network_DNS,nginx,HIGH,X,61.89,runs/20260728T072539_code_media_8f9de8214700

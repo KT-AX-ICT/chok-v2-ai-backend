@@ -1,0 +1,108 @@
+{
+  "type": "Resource_Exhaustion",
+  "severity": "MID",
+  "service": "__node__",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 2026-07-27T08:28:59.924298 직후 발생한 노드 단위 처리/네트워크 부하 급증으로 인한 Resource_Exhaustion입니다. metric에서 __node__의 system_cpu_usage가 incident 구간 평균 99.8(기준 43.35)로 포화에 가깝고, 2026-07-27T08:29:17 및 2026-07-27T08:29:33에 network receive/transmit 증가가 뒤따랐습니다. trace는 동일 시각대에 nginx → composepost → hometimeline → socialgraph 경로의 상대 지연을 보이나 HTTP 5xx나 스팬 소실은 없어, 장애가 오류보다는 성능 저하 중심으로 나타난 것으로 해석됩니다. 한편 user 서비스의 `E11000 duplicate key error`는 2026-Jul-27 08:28:48.394759부터 반복되어 직접적인 애플리케이션 오류이지만, trace의 compose 경로와 인과 연결은 Evidence만으로 확인되지 않아 동반/별도 오류 가능성을 남깁니다. metric은 77/86건, trace는 13/16 및 39/48건만 관측된 일부 데이터이므로 원인 서비스 특정의 확신도는 낮춥니다.",
+      "propagation": "알 수 없는 처리/네트워크 부하 증가 → __node__ CPU 포화 및 network receive/transmit 증가 → 다수 컨테이너 CPU/network/memory 동반 상승 → nginx → composepost → hometimeline → socialgraph 경로 지연. 병행 관측: user → MongoDB insert → `E11000 duplicate key error` 반복",
+      "confidence": 58
+    },
+    "summary": {
+      "highlight": "트리거 직후 __node__ CPU가 포화에 가깝게 상승하며 compose 경로 지연이 관측됐고, 같은 윈도에서 user 서비스의 MongoDB 중복 키 오류도 반복되었습니다.",
+      "chips": [
+        "Resource_Exhaustion",
+        "부분 관측",
+        "multi-service latency",
+        "MongoDB duplicate key"
+      ],
+      "errorTags": [
+        "E11000 duplicate key error",
+        "system_cpu_usage 99.8",
+        "node network 증가"
+      ],
+      "neutralTags": [
+        "metric 77/86건 관측",
+        "trace 13/16 및 39/48건 관측",
+        "HTTP 5xx 없음",
+        "스팬 소실 없음"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "이상 징후 발견 — 사용자(user) 로그에서 MongoDB 저장 시도 중 E11000 duplicate key error(중복 키) 에러가 반복됨. 예: 2026-Jul-27 08:28:48.394759~08:31:57.208244 구간에 `Failed to insert user j1 to MongoDB: E11000 duplicate key error ... dup key: { user_id: 444 }` 패턴이 ERROR ×34로 관측됨. (그 외 대부분은 INFO이며, 해당 에러 외 다른 뚜렷한 급변/침묵 징후는 본 log 본문만으로는 확인되지 않음)",
+        "source": "user\tERROR\t×34\t08:28:48.394759~08:31:57.208244\t[2026-Jul-27 08:28:48.394759] <error>: (UserHandler.h:190:RegisterUserWithId) Failed to insert user j1 to MongoDB: E11000 duplicate key error collection: user.user index: user_id_1 dup key: { user_id: 444 }"
+      },
+      "trace": {
+        "conclusion": "관측된 범위(13/16, 39/48)에서는 HTTP 5xx나 스팬 소실은 없고, 지연은 nginx → composepost → hometimeline(write_home_timeline) → socialgraph(get_followers/social_graph_redis_get) 경로에 상대적으로 집중됩니다. 가장 느린 구간은 composepost의 write_home_timeline_client와 그 하류의 hometimeline/get_followers/socialgraph 쪽이지만, 에러가 없어 명확한 진원 서비스는 특정하지 못했습니다.",
+        "source": "[08:28:59.924298] nginx /wrk2-api/post/compose 30.592ms, compose_post_client 28.843ms; composepost write_home_timeline_client p95/max=8.219/13.11ms, hometimeline write_home_timeline_server p95/max=7.162/12.25ms, get_followers_client p95/max=6.383/7.595ms"
+      },
+      "metric": {
+        "conclusion": "관측된 메트릭(77/86건) 기준으로, 트리거 시각 2026-07-27T08:28:59.924298 직후인 08:29:05~08:29:08에 다수 서비스의 container_cpu, container_network_receive/transmit, container_memory가 동시에 상승하기 시작했습니다. 특히 __node__의 system_cpu_usage는 incident 구간 평균 99.8(기준 43.35)로 포화에 가깝고, system_network_receive_bytes는 08:29:17에 onset=27.64, system_network_transmit_bytes는 08:29:33에 onset=537.7로 뒤이어 증가해, 트리거 이후 전반적 처리 부하/네트워크 부하 급증이 나타난 것으로 보입니다.",
+        "source": "부분 관측(77/86건) metric"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "__node__",
+          "type": "system_cpu_usage 포화 및 system_network_receive/transmit 증가"
+        },
+        {
+          "service": "nginx",
+          "type": "/wrk2-api/post/compose 요청 지연 관측"
+        },
+        {
+          "service": "composepost",
+          "type": "write_home_timeline_client 상대 지연"
+        },
+        {
+          "service": "hometimeline",
+          "type": "write_home_timeline_server 상대 지연"
+        },
+        {
+          "service": "socialgraph",
+          "type": "get_followers/social_graph_redis_get 상대 지연"
+        },
+        {
+          "service": "user",
+          "errors": 34,
+          "type": "MongoDB E11000 duplicate key error"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "__node__ system_cpu_usage",
+          "value": "incident 구간 평균 99.8, 기준 43.35"
+        },
+        {
+          "label": "__node__ system_network_receive_bytes",
+          "value": "2026-07-27T08:29:17에 onset=27.64"
+        },
+        {
+          "label": "__node__ system_network_transmit_bytes",
+          "value": "2026-07-27T08:29:33에 onset=537.7"
+        },
+        {
+          "label": "user duplicate key error",
+          "value": "2026-Jul-27 08:28:48.394759~08:31:57.208244 ERROR ×34"
+        },
+        {
+          "label": "trace latency sample",
+          "value": "[08:28:59.924298] nginx /wrk2-api/post/compose 30.592ms, compose_post_client 28.843ms"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "2026-07-27T08:29:05~08:29:33 구간의 __node__ 및 컨테이너별 CPU/network 상위 항목을 확인해 포화를 유발한 서비스 또는 요청군을 식별합니다.",
+        "__node__ system_cpu_usage가 포화에 가까운 상태이면 해당 노드의 부하를 즉시 완화합니다: composepost/hometimeline/socialgraph 관련 인스턴스 증설, 트래픽 우회, 과도 요청 rate limit 중 적용 가능한 조치를 우선 수행합니다.",
+        "nginx /wrk2-api/post/compose 경로에서 composepost → hometimeline(write_home_timeline) → socialgraph(get_followers/social_graph_redis_get) 호출 지연을 재측정하고, 하류 호출별 p95/max가 정상화되는지 확인합니다.",
+        "user 서비스에서 `RegisterUserWithId`가 `user_id: 444`, 사용자 `j1`을 반복 insert한 원인을 확인합니다. MongoDB `user.user` 컬렉션에서 해당 user_id 기존 문서를 조회하고, 중복 요청/재시도/ID 할당 로직 중 어느 경로가 같은 키를 재사용했는지 추적합니다.",
+        "중복 insert가 재시도 루프라면 해당 요청 또는 잡을 중지하고, 등록 API를 idempotent 처리하거나 중복 키 발생 시 기존 사용자 조회로 전환하도록 수정합니다.",
+        "조치 후 2026-Jul-27 08:28:48.394759~08:31:57.208244와 동일 패턴의 `E11000 duplicate key error`가 사라졌는지, 그리고 5xx·스팬 소실 없이 compose 경로 지연과 __node__ CPU/network가 함께 정상화됐는지 검증합니다."
+      ],
+      "recovery": "우선 노드 CPU/네트워크 포화를 낮추고, 동시에 user 서비스의 중복 user_id insert 반복을 중단·수정해야 합니다. metric/trace는 부분 관측이므로 조치 후 동일 윈도 기준으로 누락 구간을 보강해 재확인합니다."
+    }
+  }
+}

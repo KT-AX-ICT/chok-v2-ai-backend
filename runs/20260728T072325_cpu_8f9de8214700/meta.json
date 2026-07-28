@@ -1,0 +1,22 @@
+{
+  "scenario": "cpu",
+  "ts": "20260728T072325",
+  "set_hash": "8f9de8214700",
+  "prompt_hashes": {
+    "router": "fd8f80ff3a39",
+    "scan": "26160e3d7b41",
+    "log": "b29c50b36023",
+    "metric": "1f20b558e09f",
+    "trace": "b2ce40afc65a",
+    "report": "f0a2776f9f85"
+  },
+  "models": {
+    "report": "gpt-5.5-2026-04-23",
+    "analysis": "gpt-5.4-mini-2026-03-17",
+    "light": "gpt-5.4-nano-2026-03-17"
+  },
+  "latency_s": 62.89,
+  "pred_type": "Resource_Exhaustion",
+  "pred_service": "__node__",
+  "pred_severity": "MID"
+}

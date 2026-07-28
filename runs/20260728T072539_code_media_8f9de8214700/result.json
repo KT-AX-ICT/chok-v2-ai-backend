@@ -1,0 +1,103 @@
+{
+  "type": "Network_DNS",
+  "severity": "HIGH",
+  "service": "nginx",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 compose-post 처리 경로에서 `media-service:9090` 호스트명 해석이 실패해(`Name or service not known`) composepost가 media-service-client 연결을 만들지 못한 것입니다. nginx에서도 2026/07/27 08:42:00부터 `Could not resolve host for client socket`가 39회 발생했고, trace에서는 nginx의 `/wrk2-api/post/compose` 500 14건 및 `compose_post_client` 26.8초~64.5초 지연이 같은 구간에 관측되어 사용자 요청 실패로 전파된 정황이 일치합니다. 다만 관측된 trace subset에서는 composepost `compose_post_server` 및 text/usermention/urlshorten/uniqueid 하위 span이 정상이라, 실제 실패가 composepost 내부의 media-service 호출에서만 발생했는지 또는 nginx→composepost 경계의 일부 요청에서 발생했는지는 일부만 본 상태의 결론입니다.",
+      "propagation": "media-service 이름 해석/연결 실패 → composepost의 media-service-client 연결 실패 → nginx compose_post_client 장기 지연/타임아웃 → nginx /wrk2-api/post/compose 500",
+      "confidence": 72
+    },
+    "summary": {
+      "highlight": "2026-07-27T08:42:29.927874 전후 compose-post 경로에서 `media-service:9090` 이름 해석/연결 실패가 반복되며 nginx `/wrk2-api/post/compose` 500과 장기 지연으로 전파된 것으로 보입니다.",
+      "chips": [
+        "nginx",
+        "composepost",
+        "media-service:9090",
+        "/wrk2-api/post/compose",
+        "2026-07-27T08:42:29.927874"
+      ],
+      "errorTags": [
+        "Name or service not known",
+        "Failed to connect media-service-client",
+        "Could not resolve host for client socket",
+        "HTTP 500",
+        "E11000 duplicate key error"
+      ],
+      "neutralTags": [
+        "trace origin_service=nginx",
+        "composepost 하위 trace 일부는 정상",
+        "metric은 네트워크/CPU/메모리 상승으로 부하 동반",
+        "user duplicate key는 인과 미확정",
+        "일부만 본 상태의 결론"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "가장 두드러진 장애는 compose-post 경로에서의 외부 서비스 해석/연결 실패입니다. nginx에서 2026/07/27 08:42:00부터 39회 `Could not resolve host for client socket`가 발생했고, composepost에서도 같은 구간(08:42:00~08:45:24)에 39회 `Host: media-service Port: 9090 ... Name or service not known` 및 `Failed to connect media-service-client`가 반복되어, 트리거 시각인 2026-07-27T08:42:29.927874 전후로 급성하게 시작된 연결 문제로 보입니다. 동시에 user 서비스에서 2026/07/27 08:42:01.532160~08:45:25.460053 동안 39회 `E11000 duplicate key error ... user_id: 444`가 반복되었지만, 현재는 일부만 본 상태(user 5040/152587, socialgraph 5001/152585)라서 이중 어떤 것이 상위 원인인지 단정하기는 어렵습니다.",
+        "source": "nginx, composepost, user"
+      },
+      "trace": {
+        "conclusion": "nginx의 /wrk2-api/post/compose 요청에서 14건의 500이 발생했고, 같은 시각 nginx의 compose_post_client 스팬은 26.8초~64.5초로 비정상적으로 길었습니다. 반면 composepost의 compose_post_server는 7건 모두 에러 없이 12.41/13.11/13.11ms 수준이었고, 그 하위의 text/usermention/urlshorten/uniqueid도 모두 정상 범위라서, 현재 관측만으로는 composepost 이하의 장애 전파는 보이지 않습니다. 따라서 진원은 nginx 자체 또는 nginx→composepost 경계의 지연/타임아웃 쪽으로 보이지만, 일부만 본 상태라 backend 서비스까지는 확정하지 못합니다.",
+        "source": "nginx /wrk2-api/post/compose: 14건 err=14, 2026-07-27T08:42:39.111813 및 2026-07-27T08:43:54.222813에 500. nginx compose_post_client: 7건, p50/p95/max=2.681e+04/6.448e+04/6.448e+04ms. composepost compose_post_server: 7건 err=0, p50/p95/max=12.41/13.11/13.11ms. downstream text/usermention/urlshorten/uniqueid도 모두 err=0.",
+        "originService": "nginx"
+      },
+      "metric": {
+        "conclusion": "이상 징후 발견 — 2026-07-27T08:42:29.927874 이후(incid 구간)부터 다수 지표에서 네트워크 송/수신 및 CPU/메모리 사용률이 상승했고, 특히 시스템/호스트 및 여러 컨테이너(예: cadvisor, composepost, hometimeline, nginx, prometheus)의 네트워크 트래픽이 08:43:04~08:45:25 사이에 급격히 증가하며 피크가 관측됨. (예: system_network_receive_bytes peak=50.92@08:45:04, system_network_transmit_bytes peak=1090@08:45:20; cadvisor container_network_receive peak=277.1@08:45:10, container_network_transmit peak=1.636e+04@08:45:10; nginx container_cpu baseline max 0.07136 → incident mean 0.06693, composepost container_network_receive peak=160@08:45:25, text container_network_transmit peak=124.4@08:45:25)",
+        "source": "metric 데이터 내 통계(incid 구간) 및 peak/onset 시각들"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "nginx",
+          "errors": 14,
+          "type": "HTTP 500 및 compose_post_client 장기 지연"
+        },
+        {
+          "service": "composepost",
+          "errors": 39,
+          "type": "media-service:9090 이름 해석/연결 실패"
+        },
+        {
+          "service": "user",
+          "errors": 39,
+          "type": "MongoDB duplicate key error, 인과 미확정"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "nginx /wrk2-api/post/compose 500",
+          "value": "14건, 2026-07-27T08:42:39.111813 및 2026-07-27T08:43:54.222813에 관측"
+        },
+        {
+          "label": "nginx compose_post_client latency",
+          "value": "7건, p50/p95/max=2.681e+04/6.448e+04/6.448e+04ms"
+        },
+        {
+          "label": "composepost media-service 연결 실패 로그",
+          "value": "2026/07/27 08:42:00~08:45:24 동안 39회 `Host: media-service Port: 9090 ... Name or service not known` 및 `Failed to connect media-service-client`"
+        },
+        {
+          "label": "metric 네트워크/자원 사용 증가",
+          "value": "2026-07-27T08:42:29.927874 이후 다수 지표 상승, system_network_receive_bytes peak=50.92@08:45:04, system_network_transmit_bytes peak=1090@08:45:20"
+        },
+        {
+          "label": "부분 관측",
+          "value": "log는 user 5040/152587, socialgraph 5001/152585만 관측되었고 trace도 일부 요청 기준이므로 결론 신뢰도 제한"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "nginx 및 composepost 실행 환경에서 `media-service`가 실제로 해석되는지 확인한다: 예) `getent hosts media-service`, `nslookup media-service`, `nc -vz media-service 9090`. 로그상 실패 시각은 2026/07/27 08:42:00~08:45:24이다.",
+        "media-service 인스턴스/컨테이너/서비스 디스커버리 등록 상태와 9090 리스닝 상태를 확인한다. 서비스가 없거나 endpoint가 비어 있으면 media-service를 기동하거나 서비스/네트워크 alias를 복구한다.",
+        "composepost의 media-service client 설정(host=`media-service`, port=`9090`)이 배포 설정, DNS/search domain, 네트워크 namespace와 일치하는지 점검하고 잘못된 설정이면 롤백 또는 수정 배포한다.",
+        "DNS/서비스 디스커버리 복구 후에도 nginx의 `compose_post_client`가 장시간 대기하면 nginx upstream/resolver 캐시 및 composepost 연결 풀을 갱신하기 위해 nginx reload 또는 관련 컨테이너 재시작을 순차적으로 수행한다.",
+        "복구 검증으로 `/wrk2-api/post/compose` 요청을 재실행하고, nginx 500이 사라졌는지와 `compose_post_client` 지연이 26.8초~64.5초 수준에서 정상 범위로 내려갔는지 확인한다.",
+        "user 서비스의 `E11000 duplicate key error ... user_id: 444` 39회는 compose-post 장애와 인과가 확정되지 않았으므로 별도 트랙으로 중복 생성 요청/재시도 로직과 unique index 처리 경로를 조사한다."
+      ],
+      "recovery": "media-service 이름 해석 및 9090 포트 연결성을 복구한 뒤 compose-post 경로의 500/지연 재발 여부를 확인한다."
+    }
+  }
+}
