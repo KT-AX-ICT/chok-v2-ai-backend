@@ -128,6 +128,6 @@ RCA가 **만성 노이즈를 근본 원인으로 오판**한다. 예: kill_media
 
 ## 산출물 / 브랜치
 
-- 브랜치 `feat/baseline-injection` (worktree `C:\chok-v2-ai-backend-baseline`, base main).
+- 브랜치 `feat/baseline-injection` (주 폴더 `C:\chok-v2-ai-backend`에서 작업, base main).
 - 커밋 대상: `bundle_compression.py`, `bundle_parser.py`, `log.md`, `metric.md`, `scripts/analyze_baseline.py`,
   `datasets/baseline/log_profile.json`, 유닛테스트, 본 설계 문서, `.gitignore`(원본 baseline 로그 제외).
