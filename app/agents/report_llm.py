@@ -75,7 +75,7 @@ def assemble(
     trace_ev: TraceEvidence,
 ) -> RcaResult:
     """ReportDraft + Evidence 3종 → 최종 RcaResult (evidence 코드 주입)."""
-    service = trace_ev.origin_service or draft.service
+    service = trace_ev.origin_service or draft.service or "UNKNOWN"
     return RcaResult(
         type=draft.type,
         severity=draft.severity,

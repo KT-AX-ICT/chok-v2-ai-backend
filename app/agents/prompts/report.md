@@ -18,7 +18,9 @@ raw 데이터는 없다 — Evidence의 결론과 최소 컨텍스트(윈도, �
    - `OTHER` — 위 어디에도 맞지 않는 장애.
    - `NONE` — 장애 근거가 불충분하거나 정상.
 5. **severity**: HIGH / MID / LOW — 영향 서비스 수·핵심 경로 여부·지속 시간으로 판단.
-6. **service**: 진원 서비스. trace의 origin_service가 있으면 그것을 따른다.
+6. **service**: 대표(진원) 서비스. **데이터에 실제 등장한 서비스명 그대로** 쓴다
+   (trace의 origin_service 우선, 없으면 log/metric의 service). 말단 프록시(nginx 등)를
+   진원으로 승격하지 않는다. 확인 불가·상충 시 `UNKNOWN`.
 7. **summary.highlight**: 운영자가 한눈에 파악할 한 문장.
 8. **impact.affected**: 영향받은 서비스 목록 (Evidence에 등장한 근거 있는 것만).
 9. **actions.steps**: 구체적·실행 가능한 조치 순서. 일반론("모니터링 강화")만 나열하지 않는다.

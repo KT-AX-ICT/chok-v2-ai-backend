@@ -139,6 +139,13 @@ async def test_agents_are_swappable():
     assert result.type == "OTHER"
 
 
+async def test_service_falls_back_to_unknown():
+    """trace origin 없고 draft.service도 빈 문자열이면 대표 service는 UNKNOWN."""
+    orch = _fake_orchestrator(trace_origin=None, draft_service="")
+    result = await orch.run(1, _bundle())
+    assert result.service == "UNKNOWN"
+
+
 async def test_full_pipeline_through_queue_reaches_done(factory, monkeypatch):
     """POST 이후 흐름: 큐 → LLM 오케스트레이터(fake) → 검증 → 전송 성공 → DONE."""
     monkeypatch.setattr(orchestrator_mod, "orchestrator", _fake_orchestrator())
