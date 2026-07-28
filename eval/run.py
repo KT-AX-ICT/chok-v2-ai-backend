@@ -160,9 +160,12 @@ async def _main_async(scenarios: list[str], repeat: int) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="프롬프트 평가 러너")
+    # choices는 두지 않는다 — nargs="*" + 리스트 default + choices 조합은 Python
+    # < 3.14에서 default 리스트 전체를 하나의 선택지로 검증해 실패한다(bpo-9625).
+    # 아래에서 픽스처 존재 여부로 어차피 걸러 없는 시나리오는 스킵하므로 검증도 중복.
     parser.add_argument(
-        "scenarios", nargs="*", choices=SCENARIOS, default=list(SCENARIOS),
-        help="평가할 시나리오(기본: 픽스처가 있는 것 전부)",
+        "scenarios", nargs="*", default=list(SCENARIOS),
+        help="평가할 시나리오(기본: 픽스처가 있는 것 전부). 선택: " + ", ".join(SCENARIOS),
     )
     parser.add_argument("--repeat", type=int, default=1, help="시나리오당 반복 횟수")
     parser.add_argument("--serve", action="store_true", help="평가 후 뷰어 서버를 이어서 실행")
