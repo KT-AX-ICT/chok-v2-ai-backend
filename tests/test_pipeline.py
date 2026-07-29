@@ -146,6 +146,14 @@ async def test_service_falls_back_to_unknown():
     assert result.service == "UNKNOWN"
 
 
+async def test_service_rejects_modality_name_origin():
+    """trace가 origin_service로 모달리티명(log/metric/trace) 같은 쓰레기값을 반환하면
+    이를 대표 service로 승격하지 않고 report의 draft.service로 폴백한다."""
+    orch = _fake_orchestrator(trace_origin="trace", draft_service="media")
+    result = await orch.run(1, _bundle())
+    assert result.service == "media"
+
+
 async def test_full_pipeline_through_queue_reaches_done(factory, monkeypatch):
     """POST 이후 흐름: 큐 → LLM 오케스트레이터(fake) → 검증 → 전송 성공 → DONE."""
     monkeypatch.setattr(orchestrator_mod, "orchestrator", _fake_orchestrator())
