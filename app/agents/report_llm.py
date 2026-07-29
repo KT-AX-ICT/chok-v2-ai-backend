@@ -68,29 +68,19 @@ async def llm_report(
         return await llm.ainvoke(messages)
 
 
-_MODALITY_NAMES = {"log", "metric", "trace"}
-
-
-def _promote_origin(origin: str | None) -> str | None:
-    """trace origin_service를 대표 service 후보로 정제. 빈 값·모달리티명(log/metric/trace)
-    같은 명백한 쓰레기값은 거부한다 — trace 에이전트가 진원 미확신 시 모달리티명을 뱉는 경우가
-    있어, 이를 승격하면 report가 맞게 짚은 진원을 덮어쓴다."""
-    if not origin:
-        return None
-    s = origin.strip()
-    if not s or s.lower() in _MODALITY_NAMES:
-        return None
-    return s
-
-
 def assemble(
     draft: ReportDraft,
     log_ev: LogEvidence,
     metric_ev: MetricEvidence,
     trace_ev: TraceEvidence,
 ) -> RcaResult:
-    """ReportDraft + Evidence 3종 → 최종 RcaResult (evidence 코드 주입)."""
-    service = _promote_origin(trace_ev.origin_service) or draft.service or "UNKNOWN"
+    """ReportDraft + Evidence 3종 → 최종 RcaResult (evidence 코드 주입).
+
+    대표 service는 **검증·종합을 마친 report(draft.service)를 우선**한다 — report가 세 Evidence를
+    상관분석해 진원을 정하고 trace origin_service의 오귀속(호출자·프록시)을 보정하기 때문.
+    trace origin은 report가 미확정일 때의 폴백으로만 둔다.
+    """
+    service = draft.service or trace_ev.origin_service or "UNKNOWN"
     return RcaResult(
         type=draft.type,
         severity=draft.severity,
