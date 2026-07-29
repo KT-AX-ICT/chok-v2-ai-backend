@@ -18,6 +18,7 @@ from app.agents.schemas import ReportDraft
 from app.core.config import settings
 from app.schemas.contracts import (
     Evidence,
+    Impact,
     IngestBundle,
     LogEvidence,
     MetricEvidence,
@@ -25,6 +26,7 @@ from app.schemas.contracts import (
     ReportDetail,
     TraceEvidence,
 )
+from app.services.bundle_compression import service_error_counts
 
 ReportAgent = Callable[
     [IngestBundle, LogEvidence, MetricEvidence, TraceEvidence], Awaitable[ReportDraft]
@@ -119,19 +121,42 @@ async def llm_report(
         return await llm.ainvoke(messages)
 
 
+def _norm_service(name: str) -> str:
+    """서비스명 정규화 — LLM의 'user-service'와 로그 태그 'user'를 매칭하기 위함."""
+    s = "".join(c for c in name.lower() if c.isalnum())
+    return s[: -len("service")] if s.endswith("service") and s != "service" else s
+
+
+def _fill_affected_errors(impact: Impact, error_counts: dict[str, int]) -> Impact:
+    """impact.affected[].errors를 로그 기반 서비스별 에러 수(사실 카운트)로 채운다.
+
+    로그에 그 서비스가 있으면 factual count로 채우고(0 포함), 없으면 원값 유지.
+    LLM이 자주 누락하거나 임의로 넣던 값을 실제 카운트로 대체한다.
+    """
+    by_norm = {_norm_service(svc): n for svc, n in error_counts.items()}
+    affected = []
+    for a in impact.affected:
+        n = by_norm.get(_norm_service(a.service))
+        affected.append(a.model_copy(update={"errors": n}) if n is not None else a)
+    return impact.model_copy(update={"affected": affected})
+
+
 def assemble(
     draft: ReportDraft,
     log_ev: LogEvidence,
     metric_ev: MetricEvidence,
     trace_ev: TraceEvidence,
+    bundle: IngestBundle,
 ) -> RcaResult:
-    """ReportDraft + Evidence 3종 → 최종 RcaResult (evidence 코드 주입).
+    """ReportDraft + Evidence 3종 → 최종 RcaResult (evidence·사실 카운트 코드 주입).
 
     대표 service는 **검증·종합을 마친 report(draft.service)를 우선**한다 — report가 세 Evidence를
     상관분석해 진원을 정하고 trace origin_service의 오귀속(호출자·프록시)을 보정하기 때문.
     trace origin은 report가 미확정일 때의 폴백으로만 둔다.
+    impact.affected[].errors는 LLM이 자주 누락하므로 raw 로그의 서비스별 에러 수로 채운다.
     """
     service = draft.service or trace_ev.origin_service or "UNKNOWN"
+    impact = _fill_affected_errors(draft.impact, service_error_counts(bundle))
     return RcaResult(
         type=draft.type,
         severity=draft.severity,
@@ -140,7 +165,7 @@ def assemble(
             rca=draft.rca,
             summary=draft.summary,
             evidence=Evidence(log=log_ev, trace=trace_ev, metric=metric_ev),
-            impact=draft.impact,
+            impact=impact,
             actions=draft.actions,
         ),
     )

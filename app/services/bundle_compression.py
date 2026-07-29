@@ -30,7 +30,7 @@ from drain3 import TemplateMiner
 from drain3.masking import MaskingInstruction
 from drain3.template_miner_config import TemplateMinerConfig
 
-from app.schemas.contracts import ModalityItem
+from app.schemas.contracts import IngestBundle, ModalityItem
 
 _EMPTY = "(없음)"
 
@@ -278,6 +278,23 @@ def compress_logs(
         groups, records, trigger_dt, triggered_by, bool(baseline_profile)
     )
     return f"{highlight}\n\n{body}" if highlight else body
+
+
+_ERROR_LEVELS = {"FATAL", "CRITICAL", "ERROR"}
+
+
+def service_error_counts(bundle: IngestBundle) -> dict[str, int]:
+    """번들 로그에서 서비스별 에러 레벨(FATAL/CRITICAL/ERROR) 발생 수를 센다.
+
+    impact.affected[].errors는 report LLM이 Evidence 결론만 보고 채우다 보니 자주 누락됐다.
+    사실(factual) 카운트라 여기서 raw 로그로 결정적으로 세어 코드가 채운다(assemble).
+    """
+    counts: dict[str, int] = {}
+    for item in bundle.logs:
+        m = LEVEL_RE.search(item.raw)
+        if m and m.group(1).upper() in _ERROR_LEVELS:
+            counts[item.service] = counts.get(item.service, 0) + 1
+    return counts
 
 
 # ------------------------------------------------------------ metric 통계
