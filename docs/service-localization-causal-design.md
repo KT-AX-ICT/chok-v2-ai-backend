@@ -37,27 +37,30 @@ service를 맞춘 뒤에도 남은 code_media `type`(DEPENDENCY, 정답 CODE_STO
   **CODE_STOP**; `metric`까지 소실·이름해석실패·재시작 → **SERVICE_DOWN**. **DEPENDENCY는 외부 인프라로
   한정**(내부 서비스 연결 실패는 그 대상의 down/code_stop).
 
+## 3차 개선 — SERVICE_DOWN vs CODE_STOP 판정을 "liveness"로 날카롭게
+
+2차(생존신호 주입)만으론 code_media가 CODE_STOP이 아니라 SERVICE_DOWN으로 갔다 — 모델이 `metric=data`
+(살아있음)와 `getaddrinfo not known`(소실)을 상충으로 보고 후자를 택함. 핵심 원칙을 명시해 해소:
+
+- **metric은 liveness 프록시다. 진짜로 죽은(kill·OOM·소실) 서비스는 metric도 끊긴다.** 따라서 `metric=data`면
+  프로세스는 살아있는 것 → **SERVICE_DOWN이 아니다.**
+- `metric=data` + `log`·`trace` 침묵 + 죽음/재시작 신호 없음 → **CODE_STOP**. 호출자들의 연결·이름 해석
+  실패는 "앱이 응답을 멈춰 등록이 빠진" **결과**일 뿐, metric이 살아있으면 프로세스 소실로 넘기지 않는다.
+- 반대로 명시적 죽음/재시작 신호 또는 `metric`까지 소실이면 **SERVICE_DOWN**.
+
+일반 원칙(metric=생존 프록시)이며 특정 데이터 편향 아님. kill_media(재시작 로그=명시적 죽음)와 code_media
+(metric 생존+침묵)가 이 기준으로 깔끔히 갈린다.
+
 ## 하네스 측정 (before/after)
 
-| 시나리오 | 정답 | 인과 교정 `fedb5fcab012` | +생존신호 `c6bf87fb4e6d` |
-|---|---|---|---|
-| cpu | PERFORMANCE | O | **O** |
-| kill_media | SERVICE_DOWN / media | **O** | **O** |
-| code_media | CODE_STOP / media | X (service media ✓ / type DEPENDENCY) | X (**service media** ✓ / type **SERVICE_DOWN**) |
+| 시나리오 | 정답 | 하이라이트 `0b87554a18bd` | 인과 교정 `fedb5fcab012` | +생존신호 `c6bf87fb4e6d` | +liveness 판정 `67de21706651` |
+|---|---|---|---|---|---|
+| cpu | PERFORMANCE | O | O | O | **O** |
+| kill_media | SERVICE_DOWN / media | X | **O** | O | **O** |
+| code_media | CODE_STOP / media | X | X (service✓) | X (SERVICE_DOWN) | **O** |
 
-**정답률 1/3 → 2/3.** kill_media 완전 정답, code_media는 service를 media로 국소화하고 type을
-DEPENDENCY→SERVICE_DOWN으로(둘 다 "media가 문제" 계열).
-
-### code_media `type=CODE_STOP`은 데이터로 결정 불가 (오버핏 금지)
-
-생존신호를 넣어도 CODE_STOP이 안 나오는 건 프롬프트 결함이 아니라 **번들 증거 자체의 모순** 때문:
-- `metric=data`(살아있음) ↔ `getaddrinfo … Name or service not known`(이름조차 해석 불가 = 사라짐)이 상충.
-- media **자체 코드 에러 로그는 없음**(`log=missing`).
-모델은 이 모순을 인지하고("metric=data이지만 log·trace 없음… 실제 원인이 프로세스 종료인지…") 더 강한
-"소실" 신호(getaddrinfo)를 근거로 **SERVICE_DOWN**을 택함 — **합리적 판단**이다. 여기서 CODE_STOP을
-강제하려면 "metric=data가 이름해석실패를 이긴다"는 데이터 편향 룰이 필요하므로 **하지 않는다**. code_media의
-CODE_STOP 라벨은 **주입 방식에서 온 것**이며 관측 증거로는 SERVICE_DOWN이 더 방어 가능. (픽스처에 media
-자체 코드에러 로그가 있었다면 구분 가능 — 데이터 한계.)
+**정답률 1/3 → 3/3 (완전 정답).** service 국소화(1차 인과)로 kill_media를, type 판정(2·3차 생존신호+liveness
+원칙)으로 code_media를 정답화. 모두 분산 시스템 공통 원칙(호출자≠원인·metric=liveness)이라 비편향.
 
 ## 테스트
 
