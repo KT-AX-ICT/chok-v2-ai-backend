@@ -3,7 +3,7 @@
 report: Evidence 3종 + 최소 컨텍스트 → ReportDraft (gpt-5.5, structured output).
         raw 데이터는 다시 넣지 않는다 — 정제된 Evidence만 입력.
 assemble: detail.evidence는 LLM이 재복사하지 않고 코드가 모달리티 산출물을
-        그대로 주입한다. trace의 origin_service는 대표 service로 승격(Q-007).
+        그대로 주입한다. 대표 service는 검증·종합을 마친 report(draft.service)를 우선한다.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from app.agents.schemas import ReportDraft
 from app.core.config import settings
 from app.schemas.contracts import (
     Evidence,
+    Impact,
     IngestBundle,
     LogEvidence,
     MetricEvidence,
@@ -25,10 +26,58 @@ from app.schemas.contracts import (
     ReportDetail,
     TraceEvidence,
 )
+from app.services.bundle_compression import service_error_counts
 
 ReportAgent = Callable[
     [IngestBundle, LogEvidence, MetricEvidence, TraceEvidence], Awaitable[ReportDraft]
 ]
+
+
+_LIVENESS_RANK = {"data": 3, "empty": 2, "missing": 1}
+
+
+def service_liveness(bundle: IngestBundle) -> dict[str, dict[str, str]]:
+    """서비스별 모달리티 관측 status(data/empty/missing)를 modalityInfo에서 집계.
+
+    어느 단일 모달리티 에이전트도 못 보는 **교차 신호**를 종합 에이전트에 넘기기 위함 —
+    예: metric=data(프로세스 살아있음)인데 log·trace=missing/empty(작업 신호 없음)면 코드가
+    멈춘 것(CODE_STOP), 셋 다 없으면 소실(SERVICE_DOWN). 한 서비스가 여러 구간이면 가장
+    강한 관측(data>empty>missing)을 대표로 삼는다.
+    """
+    out: dict[str, dict[str, str]] = {}
+    mods = {
+        "log": bundle.modality_info.log,
+        "metric": bundle.modality_info.metric,
+        "trace": bundle.modality_info.trace,
+    }
+    for mod, detail in mods.items():
+        for iv in detail.intervals:
+            name = (iv.fileName or "").split("/")[-1]
+            for suf in (".log", ".json", ".txt"):
+                if name.lower().endswith(suf):
+                    name = name[: -len(suf)]
+            svc = name.rstrip("_").lower()
+            if not svc:
+                continue
+            st = (iv.status or "?").lower()
+            cur = out.setdefault(svc, {})
+            if _LIVENESS_RANK.get(st, 0) > _LIVENESS_RANK.get(cur.get(mod, ""), 0):
+                cur[mod] = st
+    return out
+
+
+def _render_liveness(liveness: dict[str, dict[str, str]]) -> str:
+    if not liveness:
+        return ""
+    lines = [
+        "## 서비스별 관측 신호 (모달리티 status — data=관측됨 / empty=구간에 기록 없음 / missing=파일 없음)"
+    ]
+    for svc in sorted(liveness):
+        s = liveness[svc]
+        lines.append(
+            f"{svc}\tlog={s.get('log', '-')}\tmetric={s.get('metric', '-')}\ttrace={s.get('trace', '-')}"
+        )
+    return "\n".join(lines)
 
 
 def build_report_message(
@@ -37,15 +86,19 @@ def build_report_message(
     metric_ev: MetricEvidence,
     trace_ev: TraceEvidence,
 ) -> str:
-    """Evidence 3종 + 최소 컨텍스트(window·trigger)만 직렬화. raw 재투입 금지."""
+    """Evidence 3종 + 최소 컨텍스트(window·trigger·서비스 생존 신호)만 직렬화. raw 재투입 금지."""
 
     def dump(ev) -> str:
         return ev.model_dump_json(exclude_none=True)
+
+    liveness = _render_liveness(service_liveness(bundle))
+    liveness_block = f"\n{liveness}\n" if liveness else ""
 
     return (
         f"- 윈도: {bundle.window.start} ~ {bundle.window.end}\n"
         f"- 트리거 시각: {bundle.trigger_info.trigger_time}\n"
         f"- 트리거 모달리티: {', '.join(bundle.trigger_info.triggered_by) or '(없음)'}\n"
+        f"{liveness_block}"
         f"\n## log Evidence\n{dump(log_ev)}\n"
         f"\n## metric Evidence\n{dump(metric_ev)}\n"
         f"\n## trace Evidence\n{dump(trace_ev)}"
@@ -68,14 +121,42 @@ async def llm_report(
         return await llm.ainvoke(messages)
 
 
+def _norm_service(name: str) -> str:
+    """서비스명 정규화 — LLM의 'user-service'와 로그 태그 'user'를 매칭하기 위함."""
+    s = "".join(c for c in name.lower() if c.isalnum())
+    return s[: -len("service")] if s.endswith("service") and s != "service" else s
+
+
+def _fill_affected_errors(impact: Impact, error_counts: dict[str, int]) -> Impact:
+    """impact.affected[].errors를 로그 기반 서비스별 에러 수(사실 카운트)로 채운다.
+
+    로그에 그 서비스가 있으면 factual count로 채우고(0 포함), 없으면 원값 유지.
+    LLM이 자주 누락하거나 임의로 넣던 값을 실제 카운트로 대체한다.
+    """
+    by_norm = {_norm_service(svc): n for svc, n in error_counts.items()}
+    affected = []
+    for a in impact.affected:
+        n = by_norm.get(_norm_service(a.service))
+        affected.append(a.model_copy(update={"errors": n}) if n is not None else a)
+    return impact.model_copy(update={"affected": affected})
+
+
 def assemble(
     draft: ReportDraft,
     log_ev: LogEvidence,
     metric_ev: MetricEvidence,
     trace_ev: TraceEvidence,
+    bundle: IngestBundle,
 ) -> RcaResult:
-    """ReportDraft + Evidence 3종 → 최종 RcaResult (evidence 코드 주입)."""
-    service = trace_ev.origin_service or draft.service or "UNKNOWN"
+    """ReportDraft + Evidence 3종 → 최종 RcaResult (evidence·사실 카운트 코드 주입).
+
+    대표 service는 **검증·종합을 마친 report(draft.service)를 우선**한다 — report가 세 Evidence를
+    상관분석해 진원을 정하고 trace origin_service의 오귀속(호출자·프록시)을 보정하기 때문.
+    trace origin은 report가 미확정일 때의 폴백으로만 둔다.
+    impact.affected[].errors는 LLM이 자주 누락하므로 raw 로그의 서비스별 에러 수로 채운다.
+    """
+    service = draft.service or trace_ev.origin_service or "UNKNOWN"
+    impact = _fill_affected_errors(draft.impact, service_error_counts(bundle))
     return RcaResult(
         type=draft.type,
         severity=draft.severity,
@@ -84,7 +165,7 @@ def assemble(
             rca=draft.rca,
             summary=draft.summary,
             evidence=Evidence(log=log_ev, trace=trace_ev, metric=metric_ev),
-            impact=draft.impact,
+            impact=impact,
             actions=draft.actions,
         ),
     )

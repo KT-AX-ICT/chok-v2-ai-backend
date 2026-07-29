@@ -108,8 +108,8 @@ async def _seed_job(factory, bundle: IngestBundle) -> int:
 
 
 async def test_orchestrator_returns_valid_rca_result():
-    result = await _fake_orchestrator().run(1, _bundle())
-    # 5키 계약 통과 + 대표 서비스는 trace origin 우선
+    result = await _fake_orchestrator(draft_service="media-service").run(1, _bundle())
+    # 5키 계약 통과 + 대표 서비스는 report 종합(draft.service) 우선
     validate_rca_result(result.model_dump(by_alias=True, exclude_none=True))
     assert result.service == "media-service"
     assert set(result.detail.model_dump()) == {
@@ -144,6 +144,14 @@ async def test_service_falls_back_to_unknown():
     orch = _fake_orchestrator(trace_origin=None, draft_service="")
     result = await orch.run(1, _bundle())
     assert result.service == "UNKNOWN"
+
+
+async def test_report_service_takes_precedence_over_trace_origin():
+    """검증·종합을 마친 report(draft.service)가 trace origin_service보다 우선한다 —
+    trace가 호출자(composepost)를 origin으로 잘못 지목해도 report가 정한 진원(media)을 쓴다."""
+    orch = _fake_orchestrator(trace_origin="composepost", draft_service="media")
+    result = await orch.run(1, _bundle())
+    assert result.service == "media"
 
 
 async def test_full_pipeline_through_queue_reaches_done(factory, monkeypatch):
