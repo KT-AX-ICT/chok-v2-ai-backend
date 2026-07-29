@@ -22,9 +22,16 @@ raw 데이터는 없다 — Evidence의 결론과 최소 컨텍스트(윈도, �
    - `SERVICE_DOWN` — 서비스 프로세스/인스턴스가 죽거나 무응답(컨테이너 kill·OOM 종료 등).
    - `CODE_STOP` — 프로세스는 살아있으나 코드 결함으로 처리 중단(예외·배포 버그·무한루프).
    - `PERFORMANCE` — 자원 경합·포화로 지연·타임아웃(CPU·메모리·커넥션풀). 다운은 아님.
-   - `DEPENDENCY` — 외부/하위 의존(DB·큐·써드파티) 장애가 전파된 경우.
+   - `DEPENDENCY` — **외부/하위 인프라 의존**(DB·큐·캐시·써드파티·외부 API)의 장애가 전파된 경우로 **한정**.
+     우리 시스템 내부 서비스로의 연결 실패는 DEPENDENCY가 아니라 **그 대상 서비스의 문제**(SERVICE_DOWN/CODE_STOP)로 본다.
    - `OTHER` — 위 어디에도 맞지 않는 장애.
    - `NONE` — 장애 근거가 불충분하거나 정상.
+
+   **SERVICE_DOWN vs CODE_STOP 판정 — "서비스별 관측 신호"(모달리티 status)를 교차로 읽어라:**
+   - 진원 서비스의 `metric=data`(프로세스 살아있음)인데 `log`·`trace`가 `missing`/`empty`(작업·요청 처리 신호 없음)면
+     → 프로세스는 떠 있으나 코드가 멈춘 것 = **CODE_STOP**.
+   - 진원 서비스가 `metric`까지 `missing`/`empty`(신호 소실)이거나, 이름 해석 실패(`getaddrinfo … not known`)·연결
+     거부·재시작 로그가 보이면 → 프로세스/컨테이너 소실 = **SERVICE_DOWN**.
 6. **severity**: HIGH / MID / LOW — 영향 서비스 수·핵심 경로 여부·지속 시간으로 판단.
 7. **service**: 위 상관분석·인과(지침 2)로 **네가 지목한 진원 서비스**를 쓴다 — **rootCause와 반드시 일치**.
    데이터에 실제 등장한 서비스명 그대로. Evidence의 `origin_service`(trace)는 **참고 후보**일 뿐이며,
