@@ -1,0 +1,116 @@
+{
+  "type": "PERFORMANCE",
+  "severity": "MID",
+  "service": "socialgraph",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 2026-07-27T08:28:59.924298 전후 socialgraph의 followers 조회 경로, 특히 `social_graph_redis_get_client`, 가 느려진 상태에서 상위 compose 흐름으로 지연이 전파되고, 2026-07-27T08:29:05 이후 노드 CPU 포화 및 여러 앱 컨테이너 자원 상승이 겹친 성능 병목입니다. 다만 metric은 77/86건, 노드 96/109건만 수집됐고 trace도 일부만 수집된 상태이므로 일부 관측 기반의 결론입니다. 로그상 `user` 서비스의 MongoDB `E11000 duplicate key error`는 명확한 별도 오류이나, 제공된 Evidence만으로 socialgraph/hometimeline 지연의 원인이라고 연결할 수는 없습니다.",
+      "propagation": "socialgraph의 followers 조회/Redis 호출 지연 → hometimeline write_home_timeline 지연 → composepost 처리 지연 → nginx /wrk2-api/post/compose tail latency 증가; 동시에 노드 CPU 포화와 여러 앱 컨테이너 자원 사용 상승이 전파 또는 공통 자원 경합으로 관측됨. user의 MongoDB duplicate key 오류는 같은 윈도에서 반복됐지만 이 전파 경로와의 직접 인과는 Evidence만으로 확인되지 않습니다."
+    },
+    "summary": {
+      "highlight": "socialgraph followers/Redis 조회 지연과 노드 CPU 포화가 hometimeline·composepost·nginx로 전파된 성능 병목이 가장 유력하며, 같은 시간대 user의 MongoDB 중복키 오류가 별도로 반복됐습니다.",
+      "chips": [
+        "2026-07-27T08:28:59.924298",
+        "socialgraph",
+        "hometimeline",
+        "composepost",
+        "node CPU 99.8",
+        "부분 관측"
+      ],
+      "errorTags": [
+        "MongoDB E11000 duplicate key error",
+        "tail latency",
+        "CPU saturation"
+      ],
+      "neutralTags": [
+        "metric 일부 수집",
+        "trace 일부 수집",
+        "5xx 명확 증거 없음"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "이상 징후 발견 — 2026-07-27T08:28:48.394759~08:31:57.208244 구간에 user 로그에 MongoDB 중복키(E11000 duplicate key error) 에러가 반복 발생(“Failed to insert user j1 to MongoDB… dup key: { user_id: 444 }”).",
+        "source": "user\tERROR\t×34(base=3 incid=31 baseline=200)\t08:28:48.394759~08:31:57.208244\t[2026-Jul-27 08:28:48.394759] <error>: (UserHandler.h:190:RegisterUserWithId) Failed to insert user j1 to MongoDB: E11000 duplicate key error collection: user.user index: user_id_1 dup key: { user_id: 444 }"
+      },
+      "trace": {
+        "conclusion": "명확한 에러/5xx는 없고 일부만 수집된 상태(media 13/16건, nginx 39/48건 등)에서 지연 전파만 보입니다. 지연은 socialgraph의 followers 조회(get_followers_server / social_graph_redis_get_client)가 느려지면서 hometimeline의 write_home_timeline 경로를 늘리고, 그 영향이 composepost → nginx의 /wrk2-api/post/compose까지 전달된 양상입니다. 다른 분기(text, media, uniqueid, user)도 정상 응답이지만 tail latency는 write_home_timeline 쪽이 가장 큽니다.",
+        "source": "집계된 트레이스 지표에서 write_home_timeline_client p95=8.219ms(max=13.11ms), hometimeline write_home_timeline_server p95=7.162ms(max=12.25ms), get_followers_client p95=6.383ms, socialgraph get_followers_server p95=3.995ms(max=6.706ms), social_graph_redis_get_client p95=3.663ms(max=6.571ms); nginx /wrk2-api/post/compose p95=29.97ms",
+        "originService": "socialgraph"
+      },
+      "metric": {
+        "conclusion": "수집이 77/86건(노드 96/109건)만 되어 일부만 본 결론이지만, 2026-07-27T08:28:59.924298 트리거 직후인 08:29:05~08:29:08부터 usertimeline, hometimeline, composepost, text, poststorage 등 여러 애플리케이션 컨테이너의 메모리·CPU·네트워크가 동시에 baseline을 벗어났습니다. 예를 들어 usertimeline container_memory는 mean 2.015e+06→2.784e+06, hometimeline는 1.475e+06→2.201e+06, composepost는 1.524e+06→2.106e+06로 모두 08:29:06에 상승이 시작됐고, 이후 08:31:50~08:31:53에 CPU/네트워크 peak가 이어졌습니다. __node__ system_cpu_usage도 incident mean 99.8로 포화 상태여서, 메트릭상 단일 서비스 하나보다는 상위 앱 계층 전반에 걸친 부하 급증/전파 양상이 더 강합니다.",
+        "source": "metric"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "socialgraph",
+          "type": "latency"
+        },
+        {
+          "service": "hometimeline",
+          "type": "latency/resource"
+        },
+        {
+          "service": "composepost",
+          "type": "latency/resource"
+        },
+        {
+          "service": "nginx",
+          "type": "latency"
+        },
+        {
+          "service": "user",
+          "errors": 34,
+          "type": "error"
+        },
+        {
+          "service": "usertimeline",
+          "type": "resource"
+        },
+        {
+          "service": "text",
+          "type": "resource"
+        },
+        {
+          "service": "poststorage",
+          "type": "resource"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "trigger",
+          "value": "2026-07-27T08:28:59.924298 metric, trace"
+        },
+        {
+          "label": "user error window",
+          "value": "2026-07-27T08:28:48.394759~08:31:57.208244, MongoDB E11000 duplicate key error ×34"
+        },
+        {
+          "label": "resource anomaly onset",
+          "value": "2026-07-27T08:29:05~08:29:08부터 여러 애플리케이션 컨테이너 메모리·CPU·네트워크 baseline 이탈"
+        },
+        {
+          "label": "node cpu",
+          "value": "__node__ system_cpu_usage incident mean 99.8"
+        },
+        {
+          "label": "trace latency",
+          "value": "nginx /wrk2-api/post/compose p95=29.97ms, write_home_timeline_client p95=8.219ms, social_graph_redis_get_client p95=3.663ms"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "2026-07-27T08:28:59.924298 전후 socialgraph의 get_followers_server 및 social_graph_redis_get_client 호출 지연을 확인하고, Redis 인스턴스의 CPU/메모리/네트워크/slowlog/connection pool 고갈 여부를 점검합니다.",
+        "2026-07-27T08:29:05~08:31:53 구간의 __node__ system_cpu_usage 포화와 usertimeline, hometimeline, composepost, text, poststorage 컨테이너 CPU·메모리·네트워크 상승을 대조해 같은 노드 또는 같은 배포 단위에 자원 경합이 있었는지 확인합니다.",
+        "socialgraph 또는 Redis 경로가 병목이면 socialgraph/hometimeline 인스턴스 증설, Redis connection pool 한도 조정, hot key·followers 대량 조회 캐시 적용 등으로 write_home_timeline 경로의 tail latency를 낮춥니다.",
+        "composepost → hometimeline → socialgraph 경로의 요청량이 급증했는지 확인하고, 필요 시 compose API에 임시 rate limit 또는 백프레셔를 적용해 노드 CPU 포화를 완화합니다.",
+        "별도 오류로 관측된 user 로그의 `E11000 duplicate key error ... dup key: { user_id: 444 }`에 대해 2026-07-27T08:28:48.394759 이후 `RegisterUserWithId` 호출 입력과 ID 생성/재시도 로직을 점검하고, 중복 user_id 요청이 재발하지 않도록 idempotency 또는 unique ID 할당 로직을 수정합니다."
+      ],
+      "recovery": "우선 socialgraph의 followers 조회/Redis 경로와 노드 CPU 포화 여부를 확인해 지연 전파를 줄이고, 별도로 user의 MongoDB duplicate key 오류를 처리합니다."
+    }
+  }
+}

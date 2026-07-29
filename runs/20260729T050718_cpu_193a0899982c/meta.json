@@ -1,0 +1,22 @@
+{
+  "scenario": "cpu",
+  "ts": "20260729T050718",
+  "set_hash": "193a0899982c",
+  "prompt_hashes": {
+    "router": "fd8f80ff3a39",
+    "scan": "26160e3d7b41",
+    "log": "d8119ffe4f84",
+    "metric": "9d3183d15707",
+    "trace": "b2ce40afc65a",
+    "report": "75695c0c0bd5"
+  },
+  "models": {
+    "report": "gpt-5.5-2026-04-23",
+    "analysis": "gpt-5.4-mini-2026-03-17",
+    "light": "gpt-5.4-nano-2026-03-17"
+  },
+  "latency_s": 52.17,
+  "pred_type": "PERFORMANCE",
+  "pred_service": "socialgraph",
+  "pred_severity": "MID"
+}

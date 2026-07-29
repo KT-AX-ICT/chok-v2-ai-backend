@@ -1,0 +1,117 @@
+{
+  "type": "CODE_STOP",
+  "severity": "LOW",
+  "service": "user",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 원인은 `user` 서비스의 `RegisterUserWithId` 경로에서 이미 존재하는 `user_id: 444`로 MongoDB insert를 반복 시도해 `E11000 duplicate key error ... dup key: { user_id: 444 }`가 발생한 것입니다. 이는 2026-07-27T08:35:31.961753 이후 2026-07-27T08:35:40.866495~2026-07-27T08:38:26.998131에 관측되었습니다. 다만 log는 일부만 수집되었고 해당 패턴의 baseline이 높으며, trace는 에러 0으로 정상 수행되어 단일 근본 원인으로 확정하기에는 증거가 제한적입니다.",
+      "propagation": "user(RegisterUserWithId) → MongoDB unique index(user_id) 충돌 → 해당 사용자 생성 요청 실패/duplicate key 로그 반복; trace로 관측된 nginx → composepost → text/hometimeline/usertimeline/poststorage/socialgraph 경로에는 전파 증거 없음"
+    },
+    "summary": {
+      "highlight": "2026-07-27T08:35:40.866495 이후 `user` 서비스의 `RegisterUserWithId`에서 MongoDB duplicate key 오류가 반복되었지만, trace상 전파 장애는 보이지 않아 제한적 사용자 생성 실패 가능성이 가장 큽니다.",
+      "chips": [
+        "부분 관측",
+        "user",
+        "MongoDB duplicate key",
+        "trace error=0",
+        "metric 증가"
+      ],
+      "errorTags": [
+        "E11000 duplicate key error",
+        "RegisterUserWithId",
+        "dup key: { user_id: 444 }"
+      ],
+      "neutralTags": [
+        "metric은 2026-07-27T08:35:57부터 여러 컨테이너 증가",
+        "2026-07-27T08:38:26~2026-07-27T08:38:29 피크",
+        "로그/트레이스 일부 수집"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "이 구간은 일부만 본 상태(예: user 5033/219869건, media 98/114건)라 확신도를 낮춰야 합니다. 관측된 로그 기준으로는 08:35:40.866495~08:38:26.998131에 user 서비스에서 `RegisterUserWithId`의 MongoDB duplicate key 오류(`E11000 duplicate key error ... dup key: { user_id: 444 }`)가 32회 반복되었고, 트리거 시각 2026-07-27T08:35:31.961753 이후에 새로 나타난 에러입니다. 다만 이 패턴의 baseline이 200으로 높아 평소에도 자주 보이는 소음일 수 있으며, 같은 구간의 composepost/usertimeline/hometimeline/poststorage 흐름은 대부분 정상 완료되어 이 로그만으로 단일 근본 원인으로 단정하기는 어렵습니다.",
+        "source": "log"
+      },
+      "trace": {
+        "conclusion": "수집된 트레이스는 부분 관측(media 8/10건, nginx 24/30건 등)이며, 보이는 경로는 nginx → composepost → text/hometimeline/usertimeline/poststorage/socialgraph로 정상 수행되었습니다. 모든 오퍼레이션의 에러는 0이고 지연도 대체로 수 ms~14ms 수준이라, trace만으로는 장애 전파나 진원 서비스를 특정할 수 없습니다.",
+        "source": "trace 집계 및 exemplar 원문(2026-07-27T08:32:31.961753 ~ 2026-07-27T08:38:31.961753, 일부 수집)"
+      },
+      "metric": {
+        "conclusion": "이상 징후 발견 — 2026-07-27T08:35:57부터 여러 컨테이너의 container_memory와 container_network(특히 receive/transmit) 및 일부 container_cpu가 기준 대비 증가하고, 2026-07-27T08:38:26~2026-07-27T08:38:29에 피크가 관측됨. (예: usertimeline/container_memory onset=2.716e+06@08:35:57 peak=2.892e+06@08:38:27, hometimeline/container_network_receive onset=44.84@08:35:58 peak=385.9@08:38:28, prometheus/container_network_receive peak=2.103e+04@08:38:28, prometheus/container_network_transmit peak=395.7@08:38:29)",
+        "source": "metric(윈도 2026-07-27T08:32:31.961753 ~ 2026-07-27T08:38:31.961753, 트리거 시각 2026-07-27T08:35:31.961753)"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "user",
+          "errors": 32,
+          "type": "`RegisterUserWithId` MongoDB duplicate key 오류"
+        },
+        {
+          "service": "nginx",
+          "errors": 0,
+          "type": "trace상 관측 에러 없음"
+        },
+        {
+          "service": "composepost",
+          "errors": 0,
+          "type": "trace상 관측 에러 없음"
+        },
+        {
+          "service": "hometimeline",
+          "errors": 0,
+          "type": "trace상 관측 에러 없음"
+        },
+        {
+          "service": "usertimeline",
+          "errors": 0,
+          "type": "trace상 관측 에러 없음"
+        },
+        {
+          "service": "poststorage",
+          "errors": 0,
+          "type": "trace상 관측 에러 없음"
+        },
+        {
+          "service": "socialgraph",
+          "errors": 0,
+          "type": "trace상 관측 에러 없음"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "log 부분 관측",
+          "value": "user 5033/219869건, media 98/114건"
+        },
+        {
+          "label": "user 오류 구간",
+          "value": "2026-07-27T08:35:40.866495~2026-07-27T08:38:26.998131, 32회"
+        },
+        {
+          "label": "metric 이상 onset",
+          "value": "2026-07-27T08:35:57부터 여러 컨테이너의 memory/network 및 일부 cpu 증가"
+        },
+        {
+          "label": "metric 피크",
+          "value": "2026-07-27T08:38:26~2026-07-27T08:38:29"
+        },
+        {
+          "label": "trace 상태",
+          "value": "부분 관측이며 모든 오퍼레이션 에러 0, 지연 수 ms~14ms 수준"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "`user` 서비스 로그에서 2026-07-27T08:35:40.866495 이후 `RegisterUserWithId`와 `E11000 duplicate key error ... dup key: { user_id: 444 }` 발생 건수가 계속 증가하는지 확인합니다.",
+        "MongoDB에서 `user_id` unique index와 `user_id: 444` 문서를 확인하고, 동일 ID가 정상 기존 사용자와 중복 생성 시도 중 어느 쪽인지 식별합니다.",
+        "`RegisterUserWithId` 호출자가 명시적으로 `user_id=444`를 반복 전달했는지, 또는 `user` 서비스의 ID 생성/재시도 로직이 같은 ID를 재사용했는지 요청 파라미터와 애플리케이션 로그를 대조합니다.",
+        "중복 요청이 외부 입력/재시도에서 온 경우 해당 요청을 차단하거나 idempotency 처리를 적용하고, ID 생성 로직 문제라면 신규 ID 발급 경로를 수정한 뒤 `user` 서비스를 롤링 재시작합니다.",
+        "2026-07-27T08:35:57부터 증가한 container_memory/container_network 및 2026-07-27T08:38:26~2026-07-27T08:38:29 피크가 단순 트래픽 증가인지 오류 재시도 폭증인지 `user`, `hometimeline`, `usertimeline`, `prometheus` 컨테이너별 네트워크/CPU 추이를 확인합니다.",
+        "조치 후 `RegisterUserWithId` duplicate key 로그가 사라졌는지, nginx → composepost → text/hometimeline/usertimeline/poststorage/socialgraph trace의 에러 0 상태와 낮은 지연이 유지되는지 재검증합니다."
+      ],
+      "recovery": "trace에서는 에러 0 및 수 ms~14ms 지연으로 정상 경로가 관측되어 광범위 장애 전파 증거는 없습니다. 우선 `user` 서비스의 duplicate key 오류가 현재도 지속되는지 확인하고, 지속 시 회원가입/사용자 생성 경로를 제한적으로 복구 조치해야 합니다."
+    }
+  }
+}
