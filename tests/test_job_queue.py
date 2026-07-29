@@ -318,6 +318,16 @@ async def test_409_delivery_treated_as_success(factory, monkeypatch):
 
     async def runner(job_id: int, bundle: IngestBundle) -> RcaResult:
         return _valid_result()
+
+    q = RcaJobQueue(concurrency=1, session_factory=factory, runner=runner)
+    q.start()
+    job_id = await _seed_job(factory)
+    await q.enqueue(job_id)
+    await q.stop()
+
+    assert await _status(factory, job_id) == "DONE"
+
+
 async def test_run_rca_cap_timeout_is_treated_as_failed_attempt(factory, monkeypatch):
     """runner가 전체 캡(rca_overall_timeout_seconds)보다 오래 걸리면 시도 실패로 흡수되고,
     2회 모두 타임아웃이면 job은 FAILED로 확정된다."""

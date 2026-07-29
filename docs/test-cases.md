@@ -1,0 +1,422 @@
+# FastAPI 백엔드 테스트 케이스
+
+RCA 파이프라인(수집 → 압축 → LLM 오케스트레이션 → 검증 → Spring 전송) FastAPI 백엔드의 pytest 스위트 전수 기록.
+
+## 개요
+
+- **총계**: 231개 테스트, 전부 통과(0 실패), 실행 ~15초.
+- **러너**: pytest, `asyncio_mode=auto`(설정은 `pyproject.toml [tool.pytest.ini_options]`) — async 테스트에 데코레이터 불필요.
+- **외부 의존 없음**: 실제 LLM 호출·네트워크·라이브 서버 없이 목(monkeypatch/MockTransport)·인메모리 SQLite로 동작(무과금).
+- **실행**: `uv run pytest` (특정 파일: `uv run pytest tests/test_ingest.py -v`).
+- 파일 26개 = 테스트 함수 222개 + 파라미터라이즈 확장 9개(`test_prompts` 프롬프트 6종, `test_agents` 팩토리 5조합) = 231.
+- 그룹별 합계: 수집 API·인증 21 · 번들 처리·압축 74 · RCA 에이전트·그래프 46 · 계약·스키마 검증 25 · 잡 처리·전송(Spring) 60 · 인프라 5 = **231**.
+
+---
+
+## 1. 수집 API·인증 (21)
+
+### tests/test_ingest.py (11)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_ingest_returns_201_with_job_id | 정상 번들 POST → 201 + 정수 `job_id` 반환 | ✅ |
+| test_ingest_job_id_increments | 연속 수집 시 `job_id` 단조 증가 | ✅ |
+| test_get_job_status_after_ingest | 수집 후 GET `/ingest/{id}` → 200 + 상태값이 5종 enum 내 | ✅ |
+| test_get_job_status_not_found | 없는 job_id 조회 → 404 | ✅ |
+| test_ingest_invalid_bundle_returns_422 | 필수 필드 누락 번들 → 422 | ✅ |
+| test_ingest_invalid_triggered_by_returns_422 | `triggered_by`가 log/metric/trace 외 값 → 422 | ✅ |
+| test_ingest_invalid_timestamp_returns_422 | `window.start` 비 ISO-8601 → 422(Spring 전송 전 차단) | ✅ |
+| test_ingest_db_failure_returns_503 | 기록 중 DB 오류를 raw 500 아닌 503으로 정리 | ✅ |
+| test_ingest_ignores_removed_present_field | 구형 `present` 필드 잔존해도 무시(extra=ignore) → 201 | ✅ |
+| test_ingest_stores_light_bundle_and_signals_file | 3종 배열은 파일로 분리, DB엔 경량 번들+파일명만; 복원 시 원문 일치 | ✅ |
+| test_ingest_empty_modalities_accepted | 모달리티 배열 전무한 최소 번들도 201 | ✅ |
+
+### tests/test_ingest_auth.py (7)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_missing_header_returns_401 | 키 설정 상태에서 `X-API-Key` 헤더 없음 → 401 | ✅ |
+| test_wrong_key_returns_401 | 잘못된 키 → 401 | ✅ |
+| test_valid_key_accepted | 올바른 키 → 201 | ✅ |
+| test_second_key_in_list_accepted | 쉼표 목록의 두 번째 키도 허용(무중단 키 교체) | ✅ |
+| test_no_key_configured_allows_request | 키 미설정이면 헤더 없이 통과(단계적 전환) | ✅ |
+| test_job_status_also_protected | GET 조회도 인증 선행 → 없는 id여도 404 아닌 401 | ✅ |
+| test_health_not_protected | `/health`는 별도 라우터라 무인증 200 | ✅ |
+
+### tests/test_health.py (3)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_health_ok_when_db_reachable | DB 도달 시 `/health` 200 + `status=ok` | ✅ |
+| test_health_503_when_db_down | DB execute 예외 시 503 | ✅ |
+| test_lifespan_fails_fast_without_api_key | 무키 기동(lifespan) → `OPENAI_API_KEY` RuntimeError로 fail-fast | ✅ |
+
+---
+
+## 2. 번들 처리·압축 (74)
+
+### tests/test_bundle_compression.py (25)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_log_dedup_collapses_repeated_errors | 동일 에러 200회 → 1패턴(×200), 최초~최후 시각·원문 샘플 유지 | ✅ |
+| test_log_dedup_keeps_rare_line_and_sorts_errors_first | 희귀 라인 원문 보존 + 에러 패턴 우선 정렬 | ✅ |
+| test_log_dedup_generalizes_unseen_format | 미하드코딩 형식(sshd/포트/호스트)도 가변부 학습해 dedup | ✅ |
+| test_log_empty | 빈 로그 → `(없음)` | ✅ |
+| test_log_surprise_sorts_acute_above_chronic | 급성(트리거 후 급증) 패턴을 만성보다 상위 정렬(surprise 기준) | ✅ |
+| test_log_base_incid_counts_in_output | 트리거 전/후 건수를 `base=/incid=`로 표기 | ✅ |
+| test_log_no_trigger_falls_back_to_level_count | trigger_time 없으면 레벨/건수 정렬로 회귀 | ✅ |
+| test_load_baseline_profile_absent_returns_empty | baseline 프로파일 파일 부재 시 빈 dict | ✅ |
+| test_highlight_surfaces_service_restart_despite_low_surprise | 서비스 재시작 로그는 surprise 낮아도 진원 하이라이트 노출 | ✅ |
+| test_highlight_trigger_time_log_when_log_triggered | log 트리거면 트리거 시각 로그(연결 실패)를 하이라이트 | ✅ |
+| test_highlight_skips_trigger_group_when_not_log_triggered | metric만 트리거면 트리거 로그 그룹 생략 | ✅ |
+| test_highlight_absent_when_no_signal | lifecycle·트리거 신호 없으면 하이라이트 섹션 없음 | ✅ |
+| test_highlight_absent_without_trigger_time | trigger_time 없으면 하이라이트 없음(회귀 안전) | ✅ |
+| test_metric_anomalous_series_sorted_first | 이탈 큰 시리즈를 알파벳 순서 무시하고 상위 정렬 | ✅ |
+| test_metric_detects_onset_and_peak | baseline 대비 최초 이탈점(onset)·최대점(peak) 산출, base/incid n 표기 | ✅ |
+| test_metric_parses_flat_json | 평면 JSON `{"cpu_usage":...}` 통계 산출(원문 통과 아님) | ✅ |
+| test_metric_parses_name_value_json | `{"metric","value"}` 쌍은 metric 값이 라벨 | ✅ |
+| test_metric_parses_prometheus_exposition | Prometheus 노출형: 라벨셋 드롭, 지표명으로 시리즈화 | ✅ |
+| test_metric_json_bool_is_not_a_metric | bool 필드를 숫자로 오인 안 함 → 미파싱 통과 | ✅ |
+| test_metric_unparsable_falls_back_to_raw | 파싱 불가 메트릭은 원문 통과 | ✅ |
+| test_metric_empty | 빈 메트릭 → `(없음)` | ✅ |
+| test_trace_aggregates_and_keeps_exemplars | 오퍼레이션별 집계(×N·err·max지연·분단위 타임라인) + 에러 exemplar 원문 보존 | ✅ |
+| test_trace_extracts_otel_name_key | OTel `name` 키를 오퍼레이션으로 승격(미상 강등 없음) | ✅ |
+| test_trace_regex_fallback_for_plain_text | 평문 스팬도 정규식 폴백으로 집계·원문 유지 | ✅ |
+| test_trace_empty | 빈 트레이스 → `(없음)` | ✅ |
+
+### tests/test_bundle_parser.py (14)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_log_agent_input_has_logs | log 에이전트 입력에 logs·trigger_time·window_start 포함 | ✅ |
+| test_log_agent_includes_interval_summary | 구간 요약(`log_intervals`)에 status 포함 | ✅ |
+| test_log_agent_includes_filename | 구간 요약에 파일명 포함(missing 특정용) | ✅ |
+| test_interval_omits_absent_fields | 값 없는 필드는 렌더 줄에서 생략(토큰 절약) | ✅ |
+| test_interval_renders_both_counts | 받은/원본 건수 `1523/20000건`, 시각만 표기 | ✅ |
+| test_interval_renders_single_count | 한쪽 건수만 온 경우 어느 쪽인지 구분 표기 | ✅ |
+| test_interval_has_no_invented_status | status 없으면 임의 'ok' 폴백 없이 미출력 | ✅ |
+| test_interval_prepends_date_when_crossing_midnight | 자정 넘김 구간은 MM-DD 병기 | ✅ |
+| test_interval_omits_date_when_same_day | 같은 날 구간은 시각만 | ✅ |
+| test_metric_agent_input_has_metrics | metric 입력에 라벨·값이 통계로 유지 | ✅ |
+| test_trace_agent_input_has_traces | trace 입력에 스팬 원문 포함 | ✅ |
+| test_empty_modality_returns_placeholder | 빈 모달리티 → `(없음)` 플레이스홀더 | ✅ |
+| test_empty_intervals_returns_placeholder | 빈 구간 → `(없음)` | ✅ |
+| test_triggered_by_constrained_to_modality_types | `triggered_by` 비허용 값은 Pydantic ValidationError | ✅ |
+
+### tests/test_bundle_store.py (10)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_split_removes_heavy_arrays_from_db_side | 분리 후 DB측 번들엔 3종 배열 제거, 경량 메타 보존 | ✅ |
+| test_split_does_not_mutate_input | 입력 dict 원본 불변 | ✅ |
+| test_file_holds_only_signals | 파일엔 3종 시그널만, 메타 제외 | ✅ |
+| test_restore_round_trips_to_original_bundle | 경량+파일 결합 시 원본 IngestBundle 복원 | ✅ |
+| test_restore_without_path_reads_inline_arrays | 파일경로 없는 레거시 job은 인라인 배열 사용 | ✅ |
+| test_restore_raises_when_file_gone | 파일 삭제 시 `SignalsMissing` | ✅ |
+| test_restore_raises_when_file_corrupted | 깨진 파일도 `SignalsMissing` | ✅ |
+| test_discard_removes_file_and_tolerates_repeat | 삭제 멱등(2회·None 인자도 무해) | ✅ |
+| test_sweep_keeps_files_still_in_use | keep 집합 파일은 오래돼도 보존 | ✅ |
+| test_sweep_removes_only_aged_files | 임계 초과 고아 파일만 회수 | ✅ |
+
+### tests/test_raw_normalizer.py (12)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_log_json_extracts_level_and_msg | JSON 로그 → `{level,msg}` 추출 | ✅ |
+| test_log_text_fallback_puts_whole_line_in_msg | 텍스트 로그는 레벨 추출 + 원문 한 줄 msg | ✅ |
+| test_log_unparseable_keeps_keys_with_empty_level | 레벨 불명 시 빈 level + 원문 msg 키 유지 | ✅ |
+| test_metric_name_value_json | name/value/threshold/exceeded JSON 정규화 | ✅ |
+| test_metric_flat_json_first_numeric | 평면 JSON은 첫 숫자 필드를 label/value로, exceeded=None | ✅ |
+| test_metric_prometheus_text | Prometheus 텍스트 → label·value 추출 | ✅ |
+| test_metric_unparseable_keeps_keys_empty | 파싱 불가 메트릭은 빈 키 구조 유지 | ✅ |
+| test_trace_json_fields | JSON 트레이스 필드(traceId/from/to/duration/status) 매핑 | ✅ |
+| test_trace_otel_name_and_duration_us | OTel `name`→to, `duration_us`→ms 환산 | ✅ |
+| test_trace_text_fallback | 평문 스팬에서 duration·status 추출, traceId 빈값 | ✅ |
+| test_normalize_payload_signals_replaces_each_raw | payload 3종 배열의 raw를 각각 정규화 치환 | ✅ |
+| test_normalize_payload_signals_tolerates_missing_keys | logs/metrics/traces 키 없어도 무해 | ✅ |
+
+### tests/test_signal_selector.py (13)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_under_limit_passes_through_untouched | 상한 이하면 그룹핑 없이 입력 그대로 반환 | ✅ |
+| test_over_limit_truncates_to_cap | 상한 초과 시 cap까지 절단, truncated=True | ✅ |
+| test_empty_input_is_safe | 빈 입력 안전 처리 | ✅ |
+| test_rare_patterns_survive_a_dominant_one | 라운드로빈으로 희귀 패턴이 지배 패턴에 밀리지 않음 | ✅ |
+| test_error_lines_beat_info_lines | 자리 부족 시 에러 로그가 INFO보다 우선 | ✅ |
+| test_error_spans_beat_healthy_spans | 에러 스팬이 정상 스팬보다 우선 | ✅ |
+| test_metric_anomalies_beat_steady_values | baseline 3σ 이탈 지점 우선 선별 | ✅ |
+| test_unparsable_metrics_are_not_dropped | 파싱 불가 메트릭도 후보로 잔존 | ✅ |
+| test_selection_is_deterministic | 동일 입력 재선별 시 동일 결과(멱등) | ✅ |
+| test_result_is_sorted_by_timestamp | 결과는 timestamp 오름차순 | ✅ |
+| test_mixed_precision_and_zone_sorts_chronologically | 정밀도·오프셋 혼재 timestamp도 시각 기준 정렬 | ✅ |
+| test_identical_timestamps_keep_collector_order | 동일 시각은 수집기 순서 유지(결정적) | ✅ |
+| test_group_count_over_limit_is_logged | 그룹 수가 상한 초과(다양성 깨짐) 시 '누락' 로그 남김 | ✅ |
+
+---
+
+## 3. RCA 에이전트·그래프 (46)
+
+### tests/test_agents.py (12 · 함수 8개, `test_agent_factory_wiring` 5조합)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_triggered_modality_promoted_to_deep | 가드레일: LLM이 scan이라도 triggered 모달리티는 deep 승격 | ✅ |
+| test_non_triggered_scan_decision_respected | 비트리거 모달리티는 LLM 결정 존중(역방향 강등 없음) | ✅ |
+| test_router_failure_falls_back_to_all_deep | router 예외 시 전 모달리티 deep 폴백 | ✅ |
+| test_router_message_is_metadata_only | router 입력은 건수·구간·트리거만, raw 미포함 | ✅ |
+| test_router_message_shows_received_vs_original | 받은 건수 + 원본 totalCount 합 병기 | ✅ |
+| test_router_message_includes_filename_in_intervals | 구간 메시지에 파일명 포함 | ✅ |
+| test_agent_factory_wiring[5조합] | deep→mini 모델·모달리티 프롬프트, scan→nano 모델·scan 프롬프트 배선 | ✅ |
+| test_user_message_contains_compressed_data_and_context | user 메시지에 모달리티·트리거 시각·압축 원문 샘플 포함 | ✅ |
+
+### tests/test_graph.py (5)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_happy_path_routes_by_plan_and_assembles | plan대로 라우팅 + origin_service 승격·evidence 주입 + 5키 계약 통과 | ✅ |
+| test_empty_modality_skips_llm | 0건 모달리티는 LLM 생략, `데이터 없음` evidence로 대체 | ✅ |
+| test_partial_failure_becomes_failed_evidence | 한 에이전트 예외는 `분석 실패` evidence로 흡수, 나머지 완주 | ✅ |
+| test_report_failure_propagates | report 예외는 전파(워커 재시도/FAILED 경로) | ✅ |
+| test_router_failure_still_completes_all_deep | router 실패해도 전 모달리티 deep로 완주 | ✅ |
+
+### tests/test_pipeline.py (7)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_orchestrator_returns_valid_rca_result | 오케스트레이터 결과 5키 계약 통과, 대표 service는 draft 우선 | ✅ |
+| test_empty_modalities_still_valid | 전 모달리티 0건이어도 계약 유지, service=draft.service | ✅ |
+| test_agents_are_swappable | 그래프 본문 변경 없이 노드 에이전트만 교체 가능 | ✅ |
+| test_service_falls_back_to_unknown | trace origin·draft.service 모두 비면 service=UNKNOWN | ✅ |
+| test_report_service_takes_precedence_over_trace_origin | report(draft.service)가 trace origin보다 우선 | ✅ |
+| test_full_pipeline_through_queue_reaches_done | 큐→오케스트레이터(fake)→검증→전송 성공→DONE 전 구간 | ✅ |
+| test_delivery_failure_leaves_job_in_delivering | 전송 실패 시 DELIVERING 유지, result는 저장 | ✅ |
+
+### tests/test_report_llm.py (6)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_service_liveness_cross_modality | 서비스별 교차 status(log/metric/trace) 생존 신호 산출 | ✅ |
+| test_service_liveness_takes_strongest_observation | 다구간이면 data>empty>missing 중 최강 관측 대표 | ✅ |
+| test_report_message_includes_liveness_signal | report 메시지에 서비스별 관측 신호 라인 포함 | ✅ |
+| test_service_error_counts_error_level_only | error/fatal만 집계, warn·info 제외 | ✅ |
+| test_assemble_fills_affected_errors_from_logs | affected.errors를 로그 에러 수로 채움(서비스명 정규화 매칭) | ✅ |
+| test_assemble_leaves_errors_none_when_service_has_no_logs | 로그 없는 서비스는 errors=None | ✅ |
+
+### tests/test_prompts.py (8 · 함수 3개, `test_loads_all_prompts...` 6종)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_loads_all_prompts_with_common_prefix[6종] | 6개 프롬프트 모두 `# 공통 규칙` 접두 + `# 역할:` 본문 결합 | ✅ |
+| test_unknown_name_rejected | 미등록 프롬프트명 → ValueError | ✅ |
+| test_cached_returns_same_object | 동일명 로드는 캐시로 같은 객체 반환 | ✅ |
+
+### tests/test_llm_layer.py (7)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_make_llm_applies_model_effort_retries | make_llm이 모델·reasoning_effort·max_retries(3) 적용 | ✅ |
+| test_make_llm_applies_effort_timeout | effort별 request_timeout(low60/medium180/high300초) | ✅ |
+| test_llm_limit_is_singleton_with_configured_capacity | 세마포어 싱글턴, 용량=설정 동시성(4) | ✅ |
+| test_llm_limit_caps_concurrency | 세마포어가 동시 실행 상한(2) 강제 | ✅ |
+| test_truncate_noop_under_limit | 상한 이하 입력은 원본 그대로 반환 | ✅ |
+| test_truncate_preserves_trigger_region_and_marks_notice | 절단 시 트리거 주변 보존 + 앞뒤 절단 고지 2회 | ✅ |
+| test_truncate_fallback_keeps_middle_without_trigger_match | 트리거 미매칭이면 중앙부 보존 + 고지 삽입 | ✅ |
+
+### tests/test_analyze_baseline.py (1)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_build_profile_counts_per_service_pattern | baseline 로그에서 서비스·레벨별 패턴 건수 집계(user ERROR=5) | ✅ |
+
+---
+
+## 4. 계약·스키마 검증 (25)
+
+### tests/test_contracts_taxonomy.py (4)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_rca_has_no_confidence_field | Rca 모델에 confidence 필드 없음 | ✅ |
+| test_result_payload_omits_confidence | 결과 페이로드에 confidence 미포함 | ✅ |
+| test_rca_type_enum_values | RcaType enum 6종(SERVICE_DOWN/CODE_STOP/PERFORMANCE/DEPENDENCY/OTHER/NONE) | ✅ |
+| test_report_draft_rejects_free_type | enum 외 자유 type → ValidationError | ✅ |
+
+### tests/test_rca_validation.py (6)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_passthrough_rca_result_instance | RcaResult 인스턴스는 그대로 통과 | ✅ |
+| test_valid_dict_parses_to_rca_result | 유효 dict → RcaResult 파싱 | ✅ |
+| test_missing_key_raises_invalid | 5키 중 누락 → `RcaResultInvalid`(사유에 필드명) | ✅ |
+| test_missing_key_reason_includes_error_type | 사유에 `detail.actions[missing]` 오류코드까지 표기 | ✅ |
+| test_type_mismatch_reason_distinguishable_from_missing | 타입 불일치 사유는 missing과 구분 | ✅ |
+| test_wrong_type_raises_invalid | 문자열 등 비객체 입력 → RcaResultInvalid | ✅ |
+
+### tests/test_schema_errors.py (10)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_missing_field_shows_path_and_type | 누락 필드 경로·타입(`inner[missing]`) 표기 | ✅ |
+| test_nested_path_joined_with_dots | 중첩 경로 점 결합(`inner.name[missing]`) | ✅ |
+| test_multiple_errors_joined | 다중 오류 ` | ` 구분 결합 | ✅ |
+| test_input_field_is_not_logged | err["input"] 값 미로깅(유출 방지) | ✅ |
+| test_value_error_message_is_kept_but_bounded | 커스텀 검증기 메시지는 보존하되 길이 상한 | ✅ |
+| test_long_message_is_truncated | 긴 메시지 절단 + `…` 접미 | ✅ |
+| test_error_count_is_capped_with_total_noted | 오류 건수 상한 + `N건 생략`·`총 M건` 표기 | ✅ |
+| test_limit_override | limit 인자로 상한 조절 | ✅ |
+| test_empty_error_list_is_handled | 빈 오류 목록 → `(오류 상세 없음)` | ✅ |
+| test_missing_loc_does_not_crash | loc 없는 오류도 `위치 불명`으로 처리 | ✅ |
+
+### tests/test_validation_logging.py (5)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_missing_field_logged_with_path | 422 시 필드 경로(camelCase 별칭)를 서버 로그에 기록 | ✅ |
+| test_log_includes_method_and_path | 로그에 `POST /ingest` 메서드·경로 포함 | ✅ |
+| test_bad_timestamp_logged_with_field_path | 형식 위반은 배열 인덱스 포함 경로(`body.logs.0.timestamp`) 기록 | ✅ |
+| test_response_body_unchanged | 422 응답 본문은 FastAPI 기본(detail 리스트) 유지 | ✅ |
+| test_valid_request_logs_no_mismatch | 정상 요청은 불일치 로그 미발생 | ✅ |
+
+---
+
+## 5. 잡 처리·전송(Spring) (60)
+
+### tests/test_job_queue.py (13)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_worker_processes_job_to_done | 워커가 job 처리 → DONE | ✅ |
+| test_worker_marks_failed_on_runner_error | runner 예외 → FAILED | ✅ |
+| test_valid_result_is_persisted_on_done | 유효 결과 저장(전송 성공 후 DONE), detail 5키 | ✅ |
+| test_invalid_result_marks_failed_with_reason | 계약 위반 결과 → FAILED, result=None, 사유에 누락 필드 | ✅ |
+| test_missing_job_is_skipped_without_crash | 없는 job_id enqueue는 무해 통과 | ✅ |
+| test_missing_signals_file_marks_failed_and_notifies_spring | 원본 파일 소실 → FAILED + Spring 통지 | ✅ |
+| test_signals_file_discarded_after_delivery | 전송 성공 DONE 후 원본 파일 회수 | ✅ |
+| test_signals_file_kept_when_delivery_fails | 전송 실패 DELIVERING이면 재전송용 파일 보존 | ✅ |
+| test_permanent_delivery_failure_marks_failed_and_discards_file | 영구 실패(4xx) → FAILED + 파일 회수 | ✅ |
+| test_409_delivery_treated_as_success | 409(멱등키 중복)를 성공으로 흡수 → job DONE 확정 | ✅ |
+| test_run_rca_cap_timeout_is_treated_as_failed_attempt | 전체 캡 초과 runner는 시도 실패, 2회 모두 초과면 FAILED | ✅ |
+| test_run_rca_within_cap_returns_normally | 캡 이내면 재시도 없이 1회로 DONE | ✅ |
+| test_concurrency_cap_limits_parallelism | 동시성 상한(2) 준수 | ✅ |
+
+### tests/test_job_cleanup.py (4)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_purges_only_old_terminal_jobs | 보존기간 초과 DONE/FAILED만 삭제, 최근·진행중 보존 | ✅ |
+| test_files_in_use_lists_only_unfinished_jobs | 미종료 job의 파일만 사용 중 목록에 포함 | ✅ |
+| test_purge_returns_zero_when_nothing_expired | 만료 없으면 삭제 0 | ✅ |
+| test_running_loop_purges_then_stops_cleanly | 정리 루프 기동→purge→취소 없이 종료 | ✅ |
+
+### tests/test_stuck_job_reaper.py (6)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_stuck_running_is_requeued_once | 여력 남은 RUNNING → PENDING 되돌림 + 재큐, requeue_count 증가 | ✅ |
+| test_requeue_exhausted_marks_failed_and_notifies_spring | 재투입 상한 소진 → FAILED + Spring에 사유 전송 | ✅ |
+| test_spring_failure_does_not_block_failed_transition | Spring 전송 실패해도 job은 FAILED 확정(best-effort) | ✅ |
+| test_fresh_running_is_not_reaped | 임계 안쪽 RUNNING은 미회수 | ✅ |
+| test_other_statuses_are_untouched | DELIVERING/DONE/FAILED는 대상 아님 | ✅ |
+| test_recover_on_startup_requeues_pending_and_running | 재기동 복구: PENDING 재큐 + RUNNING을 임계 무관 회수 | ✅ |
+
+### tests/test_delivery_reconciler.py (7)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_reconciler_redelivers_and_marks_done | DELIVERING 재전송 성공 → DONE | ✅ |
+| test_reconciler_keeps_delivering_on_failure | 재전송 실패 → DELIVERING 유지 | ✅ |
+| test_signals_file_discarded_after_redelivery | 재전송 DONE 후 원본 파일 회수 | ✅ |
+| test_redelivers_result_even_when_signals_file_missing | 원본 파일 없어도 결과는 전달 → DONE | ✅ |
+| test_reconciler_marks_failed_on_permanent_error | 영구 실패(4xx) → FAILED + 파일 회수 | ✅ |
+| test_reconciler_treats_409_as_success | 409는 성공 취급 → DONE | ✅ |
+| test_reconciler_respects_grace_period | grace 내 job은 워커와 경합 방지로 미처리 | ✅ |
+
+### tests/test_spring_client.py (30)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_result_payload_puts_type_service_inside_result | type·service는 result 내부에만, 최상위 미노출 | ✅ |
+| test_result_payload_normalizes_raw | 성공 페이로드의 3종 raw 정규화 | ✅ |
+| test_result_evidence_has_no_signal_arrays | evidence에 lines/spans/items 배열 미포함 | ✅ |
+| test_failure_payload_uses_reason_not_error | 실패 페이로드는 `reason` 사용, error·result 없음 | ✅ |
+| test_payload_carries_company_code_default | companyCode 미지정 시 기본 SN001 | ✅ |
+| test_payload_carries_provided_company_code | 지정 companyCode를 성공·실패 페이로드 모두 전달 | ✅ |
+| test_result_payload_caps_signals_at_limit | 원본 상한 초과 시 잘라서 전송(20건) | ✅ |
+| test_truncated_modality_notes_range_in_source | 잘린 모달리티는 source에 수록 범위 고지 | ✅ |
+| test_untruncated_modality_notes_full_coverage | 미절단도 `전량 수록` 명시 | ✅ |
+| test_note_appends_to_existing_llm_source | 기존 LLM source 보존 후 고지 덧붙임 | ✅ |
+| test_note_created_when_llm_left_source_empty | source 미기입이면 고지 문구로 신규 생성 | ✅ |
+| test_empty_modality_gets_no_note | 0건 모달리티는 source 미생성 | ✅ |
+| test_conclusion_is_left_untouched | LLM conclusion은 코드가 손대지 않음 | ✅ |
+| test_failure_payload_also_caps_signals | 실패 경로도 시그널 상한 동일 적용 | ✅ |
+| test_naive_timestamp_gets_utc_marker | tz 없는 값에 Z 부여(Spring 형식 정합) | ✅ |
+| test_offset_timestamp_is_converted_to_utc | 오프셋 값은 UTC 환산 | ✅ |
+| test_already_utc_timestamp_is_unchanged | 이미 Z인 값은 불변(멱등) | ✅ |
+| test_unparsable_timestamp_raises | 파싱 불가 timestamp는 ValueError | ✅ |
+| test_modality_interval_times_are_normalized | modalityInfo 구간 시각도 정규화 | ✅ |
+| test_failure_payload_also_normalizes_timestamps | 실패 페이로드도 timestamp 정규화 | ✅ |
+| test_normalization_is_idempotent | 2회 정규화해도 값 불변 | ✅ |
+| test_bundle_accepts_camelcase_company_code | camelCase companyCode 입력 수용·출력 | ✅ |
+| test_post_succeeds_on_2xx | 2xx 응답은 예외 없이 성공 | ✅ |
+| test_post_treats_409_as_success | 409(멱등키 중복)를 성공 취급 | ✅ |
+| test_post_raises_permanent_error_on_4xx | 4xx → DeliveryPermanentError(422) | ✅ |
+| test_post_raises_transient_error_on_5xx | 5xx → DeliveryTransientError(503) | ✅ |
+| test_post_propagates_network_errors | timeout/네트워크 오류는 그대로 전파 | ✅ |
+| test_post_sends_internal_secret_header | 시크릿 설정 시 `X-Internal-Secret` 헤더 전송 | ✅ |
+| test_post_omits_header_when_secret_unset | 미설정이면 헤더 자체 생략 | ✅ |
+| test_post_raises_permanent_error_on_401 | 401(시크릿 불일치) → 영구 오류 | ✅ |
+
+---
+
+## 6. 인프라 (5)
+
+### tests/test_db_session.py (3)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_pre_ping_declared_and_applied | `pool_pre_ping=True` 선언·엔진 반영(죽은 커넥션 교체) | ✅ |
+| test_recycle_declared_and_applied | `pool_recycle`=설정값 선언·반영 | ✅ |
+| test_connect_timeout_declared | `connect_timeout` 선언 및 양수 확인 | ✅ |
+
+### tests/test_logging_config.py (2)
+
+| 테스트 | 검증 내용 | 결과 |
+| --- | --- | --- |
+| test_setup_logging_applies_level_and_formatter | 레벨·포매터 적용, httpx 소음 로거 WARNING 억제 | ✅ |
+| test_setup_logging_defaults_to_settings_level | 인자 없으면 settings 기본 레벨(INFO) | ✅ |
+
+---
+
+## 파일별 테스트 수 요약
+
+| 파일 | 테스트 수 | 그룹 |
+| --- | ---: | --- |
+| tests/test_ingest.py | 11 | 수집 API·인증 |
+| tests/test_ingest_auth.py | 7 | 수집 API·인증 |
+| tests/test_health.py | 3 | 수집 API·인증 |
+| tests/test_bundle_compression.py | 25 | 번들 처리·압축 |
+| tests/test_bundle_parser.py | 14 | 번들 처리·압축 |
+| tests/test_bundle_store.py | 10 | 번들 처리·압축 |
+| tests/test_raw_normalizer.py | 12 | 번들 처리·압축 |
+| tests/test_signal_selector.py | 13 | 번들 처리·압축 |
+| tests/test_agents.py | 12 | RCA 에이전트·그래프 |
+| tests/test_graph.py | 5 | RCA 에이전트·그래프 |
+| tests/test_pipeline.py | 7 | RCA 에이전트·그래프 |
+| tests/test_report_llm.py | 6 | RCA 에이전트·그래프 |
+| tests/test_prompts.py | 8 | RCA 에이전트·그래프 |
+| tests/test_llm_layer.py | 7 | RCA 에이전트·그래프 |
+| tests/test_analyze_baseline.py | 1 | RCA 에이전트·그래프 |
+| tests/test_contracts_taxonomy.py | 4 | 계약·스키마 검증 |
+| tests/test_rca_validation.py | 6 | 계약·스키마 검증 |
+| tests/test_schema_errors.py | 10 | 계약·스키마 검증 |
+| tests/test_validation_logging.py | 5 | 계약·스키마 검증 |
+| tests/test_job_queue.py | 13 | 잡 처리·전송(Spring) |
+| tests/test_job_cleanup.py | 4 | 잡 처리·전송(Spring) |
+| tests/test_stuck_job_reaper.py | 6 | 잡 처리·전송(Spring) |
+| tests/test_delivery_reconciler.py | 7 | 잡 처리·전송(Spring) |
+| tests/test_spring_client.py | 30 | 잡 처리·전송(Spring) |
+| tests/test_db_session.py | 3 | 인프라 |
+| tests/test_logging_config.py | 2 | 인프라 |
+| **합계** | **231** | — |
