@@ -1,0 +1,117 @@
+{
+  "type": "CODE_STOP",
+  "severity": "HIGH",
+  "service": "media",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 media 서비스가 프로세스/컨테이너 수준에서는 살아 있으나(metric=data), 요청 처리 또는 서비스 등록/DNS 노출이 멈추거나 빠져 `media-service:9090` 이름 해석·접속이 실패한 것입니다. composepost가 2026-07-27T08:42:00~08:45:24 동안 `Failed to connect media-service-client`와 `getaddrinfo() <Host: media-service Port: 9090> Name or service not known`를 반복했고, nginx에서도 2026-07-27T08:42:27에 compose 실패가 확인되었습니다. 다만 media 로그는 `missing`, trace는 `empty`라 media 내부의 정확한 코드 지점은 일부만 본 상태에서는 확정할 수 없습니다.",
+      "propagation": "media → composepost → nginx → /wrk2-api/post/compose 사용자 요청"
+    },
+    "summary": {
+      "highlight": "media 서비스의 서비스 등록/요청 처리 이상으로 composepost가 media-service를 해석·접속하지 못해 게시물 작성 API 500과 장시간 지연이 발생한 것으로 보입니다.",
+      "chips": [
+        "media",
+        "composepost",
+        "nginx",
+        "/wrk2-api/post/compose",
+        "08:42~08:45"
+      ],
+      "errorTags": [
+        "Failed to connect media-service-client",
+        "getaddrinfo media-service Name or service not known",
+        "HTTP 500"
+      ],
+      "neutralTags": [
+        "media metric은 관측됨",
+        "media log missing",
+        "media trace empty",
+        "일부 관측 기반"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "로그상 핵심은 composepost가 08:42:00~08:45:24 동안 39회 `Failed to connect media-service-client`로 실패했고, 같은 구간에 `getaddrinfo() <Host: media-service Port: 9090> Name or service not known` 및 `Could not resolve host for client socket.`가 반복된 점입니다. 이는 호출 주체가 아니라 연결 대상인 `media-service`의 이름 해석/접속 실패가 진원으로 보이며, `nginx`에서도 08:42:27에 동일한 compose 실패가 확인됩니다. 다만 `media`는 `status=missing 0/0건`이라 해당 서비스 로그는 보지 못한 부분 관측 상태입니다.",
+        "source": "log"
+      },
+      "trace": {
+        "conclusion": "nginx의 `/wrk2-api/post/compose`에서 500이 반복되고, 같은 경로의 `compose_post_client`는 수만 ms급 장시간 지연을 보입니다. 다만 그 아래의 `composepost`와 `text`·`user`·`uniqueid`·`urlshorten`·`usermention` 스팬은 모두 에러 없이 짧은 지연으로 보이며, 현재 본문만으로는 하류 진원을 특정하기 어렵습니다. 일부 서비스는 `empty`로 관측이 제한되어 있어, 이 결론은 일부만 본 상태의 결론입니다.",
+        "source": "trace"
+      },
+      "metric": {
+        "conclusion": "이상 징후 발견 — 2026-07-27T08:42:38 이후 multiple 지표에서 baseline 대비 급격한 상승(예: text/hometimeline/usermention/uniqueid container_cpu 평균이 트리거 이후 큰 폭 증가, 최대값도 08:45:23 부근에 peak). 또한 container_network_receive/transmit 및 prometheus/jaegeragent 등의 전송량·시스템 지표도 트리거 이후 증가하며 최대값이 08:45:10~08:45:25 부근에서 관측됨.",
+        "source": "metric: 2026-07-27T08:39:29.927874 ~ 2026-07-27T08:45:29.927874, trigger=2026-07-27T08:42:29.927874. 주요 이상점(이상점 크기순): text/container_cpu onset=08:42:38 peak=0.0003282@08:45:23 (baseline mean=5.216e-06 → incident mean=0.0002067, max=0.0003282). hometimeline/container_cpu onset=08:42:38 peak=0.0003634@08:45:23. usermention/container_cpu onset=08:42:38 peak=7.958e-05@08:45:23. uniqueid/container_cpu onset=08:42:38 peak=8.689e-05@08:45:23. text/container_network_transmit onset=08:42:40 peak=124.4@08:45:25, hometimeline/container_network_transmit peak=260.2@08:45:25, usertimeline/container_network_transmit peak=408.2@08:45:25. prometheus/container_network_receive peak=2.269e+04@08:45:25, jaegeragent/container_network_transmit peak=5332@08:45:25. nodeexporter/container_network_transmit peak=1088@08:45:10, cadvisor/container_network_transmit peak=1.636e+04@08:45:10."
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "media",
+          "type": "진원 후보: 요청 처리/서비스 등록 이상"
+        },
+        {
+          "service": "composepost",
+          "errors": 39,
+          "type": "media-service 연결 실패"
+        },
+        {
+          "service": "nginx",
+          "errors": 39,
+          "type": "compose API 500"
+        },
+        {
+          "service": "text",
+          "type": "부하 증가 관측"
+        },
+        {
+          "service": "hometimeline",
+          "type": "부하 증가 관측"
+        },
+        {
+          "service": "usermention",
+          "type": "부하 증가 관측"
+        },
+        {
+          "service": "uniqueid",
+          "type": "부하 증가 관측"
+        },
+        {
+          "service": "usertimeline",
+          "type": "네트워크 전송 증가 관측"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "게시물 작성 실패",
+          "value": "08:42 전후부터 `/wrk2-api/post/compose`에서 500이 반복됨"
+        },
+        {
+          "label": "미디어 서비스 연결 실패",
+          "value": "08:42:00~08:45:24에 composepost에서 `Failed to connect media-service-client` 39회 발생"
+        },
+        {
+          "label": "이름 해석 실패",
+          "value": "composepost에서 `media-service:9090`에 대해 `Name or service not known`와 `Could not resolve host for client socket.` 반복"
+        },
+        {
+          "label": "응답 지연",
+          "value": "`compose_post_client` 호출이 수만 ms급으로 길어짐"
+        },
+        {
+          "label": "부하 확산",
+          "value": "08:42:38 이후 여러 서비스의 CPU·네트워크 사용이 증가하고 08:45 부근에 최고치 관측"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "composepost 실행 환경에서 `media-service` 이름 해석과 9090 포트 접속을 즉시 확인합니다(`getent hosts media-service`, `nc`/`curl` 등).",
+        "media 서비스 인스턴스의 컨테이너/프로세스 상태, 헬스체크, 9090 리슨 여부, 서비스 디스커버리/DNS 엔드포인트 등록 상태를 점검합니다. metric은 관측되어 프로세스는 떠 있는 정황이 있으므로, 단순 컨테이너 사망보다 앱 처리 루프·서비스 등록 상태를 우선 확인합니다.",
+        "media 헬스체크 실패, 9090 미리스닝, 서비스 엔드포인트 누락이 확인되면 media 서비스를 재시작하거나 직전 정상 배포로 롤백해 서비스 등록을 재생성합니다.",
+        "복구 후 composepost 로그에서 `Failed to connect media-service-client`, `getaddrinfo() <Host: media-service Port: 9090> Name or service not known`가 중단되는지 확인합니다.",
+        "nginx의 `/wrk2-api/post/compose` 500 및 `compose_post_client` 장시간 지연이 사라졌는지 재요청과 트레이스로 검증합니다.",
+        "media 로그가 `missing`으로 관측되지 않았으므로, 컨테이너 stdout/로그 수집 경로와 권한을 확인해 재발 시 media 내부 원인을 직접 볼 수 있게 복구합니다."
+      ],
+      "recovery": "media-service의 서비스 등록/요청 처리 상태를 복구하고, composepost에서 media-service:9090 이름 해석·접속이 정상화되는지 확인합니다."
+    }
+  }
+}
