@@ -1,0 +1,127 @@
+{
+  "type": "PERFORMANCE",
+  "severity": "HIGH",
+  "service": "socialgraph",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 원인은 socialgraph의 팔로워 조회 경로에서 발생한 성능 저하다. trace에서 `social_graph_redis_get_client`와 `socialgraph.get_followers_server` 지연이 함께 높고, 이 지연이 `hometimeline.write_home_timeline_server` 및 `composepost.write_home_timeline_client`로 전파된 형태가 관측된다. metric도 2026-07-27T08:29:05~08:29:08부터 여러 서비스의 CPU·network·memory와 노드 CPU가 동반 상승해 지연에 따른 부하 증폭을 뒷받침한다. 다만 로그·메트릭·트레이스가 모두 일부만 관측된 상태이며, Redis 자체 장애를 직접 보여주는 독립 증거는 없어 확정 원인이라기보다 가장 유력한 가설이다.",
+      "propagation": "socialgraph Redis 조회 지연 → socialgraph.get_followers_server 지연 → hometimeline.write_home_timeline_server 지연 → composepost.write_home_timeline_client 지연 → usertimeline/hometimeline/composepost/text 및 하위 저장소·캐시 계층의 CPU·network·memory 부하 증폭 → __node__ system_cpu_usage 상승"
+    },
+    "summary": {
+      "highlight": "2026-07-27T08:28:59.924298 직후 socialgraph의 Redis 기반 팔로워 조회 지연이 hometimeline·composepost 쓰기 경로로 전파되고, 여러 서비스와 노드 CPU 부하가 함께 증폭된 성능 장애로 보인다.",
+      "chips": [
+        "2026-07-27T08:25:59.924298~2026-07-27T08:31:59.924298",
+        "trigger=metric, trace",
+        "partial observation",
+        "no HTTP errors observed"
+      ],
+      "errorTags": [
+        "social_graph_redis_get_client latency",
+        "get_followers latency",
+        "node CPU saturation"
+      ],
+      "neutralTags": [
+        "log는 user 5035/152587, socialgraph 5001/152667만 관측",
+        "metric은 각 구간 77/86건만 관측",
+        "trace는 13/16, 39/48 등 일부만 관측"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "수집된 로그는 원본의 일부만 본 상태(user 5035/152587, socialgraph 5001/152667)라 확신도는 낮다. 그럼에도 2026-07-27T08:28:48.394759~2026-07-27T08:31:57.208244 사이 user 서비스에서 `Failed to insert user j1 to MongoDB: E11000 duplicate key error ... dup key: { user_id: 444 }` 오류가 34회 발생했지만, baseline=200으로 평소에도 매우 흔한 패턴이라 이것만으로 근본 원인이라 보기 어렵다. 같은 시각대의 compose-post / usertimeline / hometimeline / poststorage 경로는 2026-07-27T08:28:48대에 시작해 성공 완료 로그가 이어져, 로그 관점에서는 뚜렷한 실패보다는 정상 처리 흐름이 더 많이 보인다.",
+        "source": "log-agent(deep)"
+      },
+      "trace": {
+        "conclusion": "08:28~08:31 구간에서 HTTP 에러는 보이지 않지만, 지연은 `composepost → hometimeline → socialgraph` 경로에서 가장 두드러집니다. 특히 `composepost.write_home_timeline_client`와 `hometimeline.write_home_timeline_server`의 지연이 크고, 그 하위의 `socialgraph.get_followers_server` 및 `social_graph_redis_get_client` 지연도 함께 높아져 상류로 전파된 형태입니다. 다만 제공된 트레이스는 일부만 관측된 상태(13/16, 39/48 등)라 원인 확신도는 중간 수준입니다.",
+        "source": "집계상 `composepost.write_home_timeline_client` p95 8.219/max 13.11, `hometimeline.write_home_timeline_server` p95 7.162/max 12.25, `socialgraph.get_followers_server` p95 3.995/max 6.706, `social_graph_redis_get_client` p95 3.663/max 6.571가 상대적으로 두드러짐",
+        "originService": "socialgraph"
+      },
+      "metric": {
+        "conclusion": "메트릭상으로는 2026-07-27T08:28:59.924298 트리거 직후인 08:29:05~08:29:08부터 usertimeline, hometimeline, composepost, text에서 container_cpu·container_network_receive/transmit가 동시에 이탈했고, memory도 같은 시각(대부분 08:29:06)부터 상승했습니다. 이후 poststorage, usermention, uniqueid, media, urlshorten과 각 mongodb/memcached, 그리고 __node__의 system_cpu_usage(기저 43.35 → incident 평균 99.8)까지 연쇄적으로 커져서, 특정 단일 서비스의 선행 이상이라기보다 트리거 이후 발생한 광범위한 부하 증폭 패턴으로 보입니다. 다만 수집은 각 구간 77/86건만 확보되어 일부 관측 상태이므로, 이 결론의 확신도는 제한적입니다.",
+        "source": "metric"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "composepost",
+          "type": "trace latency / cpu·network increase"
+        },
+        {
+          "service": "hometimeline",
+          "type": "trace latency / cpu·network·memory increase"
+        },
+        {
+          "service": "socialgraph",
+          "type": "follower lookup / Redis client latency"
+        },
+        {
+          "service": "usertimeline",
+          "type": "cpu·network·memory increase"
+        },
+        {
+          "service": "text",
+          "type": "cpu·network·memory increase"
+        },
+        {
+          "service": "poststorage",
+          "type": "subsequent metric increase"
+        },
+        {
+          "service": "usermention",
+          "type": "subsequent metric increase"
+        },
+        {
+          "service": "uniqueid",
+          "type": "subsequent metric increase"
+        },
+        {
+          "service": "media",
+          "type": "subsequent metric increase"
+        },
+        {
+          "service": "urlshorten",
+          "type": "subsequent metric increase"
+        },
+        {
+          "service": "user",
+          "errors": 34,
+          "type": "duplicate key log pattern, likely unrelated"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "node system_cpu_usage",
+          "value": "기저 43.35 → incident 평균 99.8"
+        },
+        {
+          "label": "composepost.write_home_timeline_client",
+          "value": "p95 8.219 / max 13.11"
+        },
+        {
+          "label": "hometimeline.write_home_timeline_server",
+          "value": "p95 7.162 / max 12.25"
+        },
+        {
+          "label": "socialgraph.get_followers_server",
+          "value": "p95 3.995 / max 6.706"
+        },
+        {
+          "label": "social_graph_redis_get_client",
+          "value": "p95 3.663 / max 6.571"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "2026-07-27T08:28:59.924298 전후 socialgraph의 Redis 연결 상태와 `social_graph_redis_get_client` 지연을 확인한다: Redis 인스턴스 CPU/메모리, slowlog, 커넥션 수, 네트워크 RTT를 점검한다.",
+        "socialgraph에서 `get_followers` 요청량과 팔로워 수가 큰 사용자 요청이 집중됐는지 확인하고, 필요 시 해당 경로에 임시 rate limit 또는 backpressure를 적용한다.",
+        "hometimeline의 `write_home_timeline_server` 큐/스레드/커넥션풀 포화 여부를 확인하고, 대기열이 쌓였으면 composepost의 write_home_timeline 호출 타임아웃·동시성 제한을 일시적으로 낮춘다.",
+        "노드 `system_cpu_usage`가 incident 평균 99.8까지 상승한 것으로 관측되므로, 같은 노드에 배치된 usertimeline, hometimeline, composepost, text 및 관련 mongodb/memcached 컨테이너의 CPU throttling 여부를 확인하고 필요 시 인스턴스 분산 또는 스케일아웃한다.",
+        "user 로그의 `E11000 duplicate key error`는 2026-07-27T08:28:48.394759~2026-07-27T08:31:57.208244에 34회 보이나 baseline=200으로 흔한 패턴이므로, 이번 지연 원인으로 단정하지 말고 별도 중복 생성 경로만 후속 점검한다.",
+        "수집 데이터가 log user 5035/152587, socialgraph 5001/152667 및 metric 77/86건 등 일부만 관측된 상태이므로, 원본 로그·메트릭·트레이스 전체를 확보해 onset 선후관계를 재검증한다."
+      ],
+      "recovery": "socialgraph 팔로워 조회/Redis 경로의 지연을 우선 완화하고, write_home_timeline 경로의 누적 요청을 줄여 노드 CPU 포화를 해소한다."
+    }
+  }
+}

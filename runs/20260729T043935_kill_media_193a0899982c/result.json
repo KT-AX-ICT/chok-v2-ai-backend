@@ -1,0 +1,120 @@
+{
+  "type": "NONE",
+  "severity": "LOW",
+  "service": "nginx",
+  "detail": {
+    "rca": {
+      "rootCause": "입력 Evidence만으로는 확정 가능한 근본 원인이 없습니다. user 서비스에서 2026-07-27T08:35:40.866495~2026-07-27T08:38:26.998131 동안 `RegisterUserWithId` MongoDB duplicate key 오류가 32회 있었지만, log Evidence가 baseline=200으로 평소에도 흔한 패턴이라고 명시해 이번 트리거의 원인으로 단정하기 어렵습니다. metric Evidence는 2026-07-27T08:35:56~08:36:14에 여러 서비스와 MongoDB/Redis의 부하 증가를 보이나 부분 관측이며, trace Evidence는 err=0 및 http_status_code=200만 확인되어 장애 전파 근거가 부족합니다.",
+      "propagation": "UNKNOWN → user duplicate key 로그 및 다수 서비스 리소스 증가 관측; trace에서는 nginx 200/err=0으로 사용자 요청 실패 전파는 확인되지 않음"
+    },
+    "summary": {
+      "highlight": "user 서비스의 duplicate key 로그와 다수 서비스 부하 증가는 관측됐지만 baseline상 흔한 오류이고 trace 실패가 없어, 현재 Evidence만으로는 장애 근본 원인을 확정하기 어렵습니다.",
+      "chips": [
+        "근본 원인 미확정",
+        "부분 관측",
+        "trace err=0",
+        "nginx 200 only"
+      ],
+      "errorTags": [
+        "MongoDB duplicate key",
+        "RegisterUserWithId"
+      ],
+      "neutralTags": [
+        "metric 부분 관측",
+        "서비스 재시작 징후 없음"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "관측된 로그는 일부만 본 상태이지만, 2026-07-27T08:35:40.866495~2026-07-27T08:38:26.998131 구간의 user 서비스에서 `RegisterUserWithId` MongoDB duplicate key 오류가 32회 발생했습니다. 다만 이 패턴은 baseline=200으로 평소에도 매우 흔해, 로그만으로는 이를 이번 트리거의 근본 원인으로 단정하기 어렵습니다. 같은 시각대에 composepost/poststorage/usertimeline/hometimeline 흐름은 `completed`로 정상 종료했고, 08:33:41.120521~08:33:47.895885의 각 서비스 `Starting ...` 로그도 1회씩만 보여 재시작 징후는 보이지 않습니다.",
+        "source": "log"
+      },
+      "trace": {
+        "conclusion": "이상 징후 없음 — 트레이스 집계에서 모든 span이 err=0이며, nginx의 예시 요청들도 http_status_code=200만 확인됨(예: 2026-07-27T08:37:33.411438, 2026-07-27T08:38:21.659438).",
+        "source": "trace",
+        "originService": "nginx"
+      },
+      "metric": {
+        "conclusion": "부분 관측된 메트릭( media 85/101건, 나머지 다수 73/87건 ) 기준으로, 2026-07-27T08:35:31.961753 트리거 직후인 08:35:56~08:35:59에 usertimeline·hometimeline·composepost·text·poststorage·usermention에서 container_memory와 container_cpu, 네트워크 송수신이 동시에 상승했다. 이후 08:36:11~08:36:14에는 usertimelinemongodb·poststoragemongodb·mediamongodb·urlshortenmongodb, redis, prometheus/cadvisor까지 함께 증가해, 단일 서비스보다는 다수 서비스로 전파된 부하 증가 패턴으로 보인다.",
+        "source": "부분 관측된 metric 시리즈 요약"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "user",
+          "errors": 32,
+          "type": "MongoDB duplicate key in RegisterUserWithId"
+        },
+        {
+          "service": "usertimeline",
+          "type": "container_memory/container_cpu/network 증가"
+        },
+        {
+          "service": "hometimeline",
+          "type": "container_memory/container_cpu/network 증가"
+        },
+        {
+          "service": "composepost",
+          "type": "container_memory/container_cpu/network 증가"
+        },
+        {
+          "service": "text",
+          "type": "container_memory/container_cpu/network 증가"
+        },
+        {
+          "service": "poststorage",
+          "type": "container_memory/container_cpu/network 증가"
+        },
+        {
+          "service": "usermention",
+          "type": "container_memory/container_cpu/network 증가"
+        },
+        {
+          "service": "usertimelinemongodb",
+          "type": "리소스 사용 증가"
+        },
+        {
+          "service": "poststoragemongodb",
+          "type": "리소스 사용 증가"
+        },
+        {
+          "service": "mediamongodb",
+          "type": "리소스 사용 증가"
+        },
+        {
+          "service": "urlshortenmongodb",
+          "type": "리소스 사용 증가"
+        },
+        {
+          "service": "redis",
+          "type": "리소스 사용 증가"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "log 오류",
+          "value": "2026-07-27T08:35:40.866495~2026-07-27T08:38:26.998131 user `RegisterUserWithId` MongoDB duplicate key 32회"
+        },
+        {
+          "label": "trace 오류",
+          "value": "모든 span err=0, nginx 예시 요청 http_status_code=200만 확인(2026-07-27T08:37:33.411438, 2026-07-27T08:38:21.659438)"
+        },
+        {
+          "label": "metric 관측 상태",
+          "value": "부분 관측(media 85/101건, 나머지 다수 73/87건)"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "2026-07-27T08:35:40.866495~2026-07-27T08:38:26.998131 구간의 user 서비스 `RegisterUserWithId` 호출에서 동일 사용자 ID 재시도 또는 중복 요청이 있었는지 애플리케이션 로그와 MongoDB unique index 충돌 키를 대조합니다.",
+        "log Evidence에서 duplicate key 패턴의 baseline=200이 높다고 되어 있으므로, 같은 오류가 평소 허용 가능한 중복 등록 처리인지, 실제 사용자 등록 실패로 노출되는지 user 서비스의 에러 처리 경로를 확인합니다.",
+        "2026-07-27T08:35:56~08:36:14 구간의 usertimeline·hometimeline·composepost·text·poststorage·usermention 및 MongoDB/Redis 메트릭을 원본 시계열로 재조회해 CPU·memory·network 증가가 임계치 초과 또는 timeout과 연결됐는지 확인합니다.",
+        "trace Evidence에서는 err=0 및 nginx http_status_code=200만 확인되므로, 동일 윈도에서 4xx/5xx, latency p95/p99, dropped span 여부를 추가 조회해 부분 관측으로 누락된 실패가 없는지 검증합니다.",
+        "검증 결과 duplicate key가 실제 사용자 영향으로 확인되면 user 서비스의 `RegisterUserWithId`를 idempotent 처리하거나 중복 키 예외를 정상 응답/재조회 흐름으로 전환하는 패치를 준비합니다."
+      ],
+      "recovery": "trace 기준 요청 실패나 서비스 다운 근거는 확인되지 않아 즉시 복구 조치보다는 확인·감시가 우선입니다."
+    }
+  }
+}

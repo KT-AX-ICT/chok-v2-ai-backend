@@ -1,0 +1,106 @@
+{
+  "type": "NONE",
+  "severity": "LOW",
+  "service": "UNKNOWN",
+  "detail": {
+    "rca": {
+      "rootCause": "근본 장애 원인은 확인되지 않았습니다. 로그 트리거는 user 서비스의 `Failed to insert user ... duplicate key error ... user_id: 444` 반복이지만, Evidence상 해당 패턴의 baseline이 200으로 높아 평소에도 자주 보이는 중복 등록 오류로 해석되며, 다른 서비스 처리 흐름은 `completed`/`succeeded`로 이어졌습니다. 메트릭 상승은 2026-07-27T08:35:31.961753 트리거 이후 2026-07-27T08:35:56~08:35:59부터 나타나 선행 원인보다는 처리량/백로그 증가의 결과일 가능성이 높고, trace에서도 오류나 뚜렷한 지연 급증이 확인되지 않았습니다. 단, log는 11678건→60패턴 요약이고 metric/trace도 부분 관측이므로 일부만 본 상태의 결론입니다.",
+      "propagation": "확인된 장애 전파 경로 없음; 관측된 정상 호출 경로는 nginx → composepost → text/user/media/uniqueid/poststorage/usertimeline/hometimeline/socialgraph/urlshorten/usermention"
+    },
+    "summary": {
+      "highlight": "user 서비스의 duplicate key ERROR 반복이 트리거됐지만 baseline이 높고 trace 오류·지연 및 선행 메트릭 이상이 없어, 현재 Evidence만으로는 실제 장애나 근본 원인을 특정하기 어렵습니다.",
+      "chips": [
+        "장애 근거 불충분",
+        "부분 관측",
+        "user duplicate key",
+        "트레이스 정상"
+      ],
+      "errorTags": [
+        "Failed to insert user",
+        "duplicate key error",
+        "user_id: 444"
+      ],
+      "neutralTags": [
+        "2026-07-27T08:35:31.961753",
+        "2026-07-27T08:35:56~08:35:59 resource rise",
+        "2026-07-27T08:38:26~08:38:29 peak"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "관측된 로그에서는 2026-07-27 08:35:40.866495~2026-07-27 08:38:26.998131에 user 서비스에서 `Failed to insert user ... duplicate key error ... user_id: 444` ERROR가 32회 반복됐지만, 해당 패턴의 baseline이 200으로 높아 평소에도 자주 보이는 중복 등록 오류로 보이며 이것만으로 장애 원인이라고 단정하기 어렵다. 같은 구간에서 composepost, text, media, uniqueid, urlshorten, usermention, poststorage, usertimeline, hometimeline의 주요 처리 흐름은 `completed`/`succeeded`로 이어져, 로그상 명확한 서비스 실패나 재시작 연쇄는 확인되지 않았다. 다만 11678건→60패턴으로 요약된 일부 관측 로그만 본 결론이다.",
+        "source": "log"
+      },
+      "trace": {
+        "conclusion": "부분 관측(예: media 8/10건, nginx 24/30건 등) 상태이지만, 본문 트레이스 집계에서는 오류와 뚜렷한 지연 급증이 보이지 않습니다. nginx → composepost → text / user / media / uniqueid / poststorage / usertimeline / hometimeline / socialgraph / urlshorten / usermention 경로가 모두 정상적으로 이어지고 있으며, 08:38에 여러 서비스 볼륨이 함께 줄어드는 모습은 특정 하류 서비스의 장애 전파보다는 전체 트래픽 변동 또는 수집 분량 변화에 가깝습니다.",
+        "source": "trace aggregate and exemplar spans"
+      },
+      "metric": {
+        "conclusion": "부분 관측 상태(예: media 85/101건, 다수 서비스 73/87건)에서 본 메트릭은 2026-07-27T08:35:31.961753 트리거 이후 약 25~30초 뒤인 08:35:56~08:35:59부터 usertimeline, hometimeline, composepost, text, poststorage를 중심으로 container_memory, container_cpu, container_network_receive/transmit가 동시다발적으로 상승한 양상을 보입니다. 정점은 대부분 08:38:26~08:38:29에 나타났고, redis/mongodb 및 prometheus/cadvisor/nodeexporter 같은 지원 계층도 함께 증가해 서비스 전반의 처리량/백로그 증가 또는 부하 전파로 해석되는 반면, 트리거 이전의 선행 메트릭 이상은 확인되지 않습니다.",
+        "source": "metric"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "user",
+          "errors": 32,
+          "type": "duplicate key error 로그 반복, 장애 영향은 확인되지 않음"
+        },
+        {
+          "service": "usertimeline",
+          "type": "container_memory/container_cpu/container_network_receive/transmit 상승"
+        },
+        {
+          "service": "hometimeline",
+          "type": "container_memory/container_cpu/container_network_receive/transmit 상승"
+        },
+        {
+          "service": "composepost",
+          "type": "container_memory/container_cpu/container_network_receive/transmit 상승"
+        },
+        {
+          "service": "text",
+          "type": "container_memory/container_cpu/container_network_receive/transmit 상승"
+        },
+        {
+          "service": "poststorage",
+          "type": "container_memory/container_cpu/container_network_receive/transmit 상승"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "log window",
+          "value": "2026-07-27 08:35:40.866495~2026-07-27 08:38:26.998131 user duplicate key ERROR 32회"
+        },
+        {
+          "label": "metric rise onset",
+          "value": "2026-07-27T08:35:56~08:35:59부터 다수 서비스 resource/network 지표 상승"
+        },
+        {
+          "label": "metric peak",
+          "value": "대부분 2026-07-27T08:38:26~08:38:29 정점"
+        },
+        {
+          "label": "trace",
+          "value": "오류와 뚜렷한 지연 급증 확인되지 않음"
+        },
+        {
+          "label": "partial observation",
+          "value": "log 11678건→60패턴 요약, metric/trace 일부 건수만 관측"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "2026-07-27 08:35:40.866495~2026-07-27 08:38:26.998131 구간의 user 서비스 `Failed to insert user ... duplicate key error ... user_id: 444` 32건이 실제 사용자 영향 오류인지, 중복 가입/재시도에 대한 기대된 거절인지 원본 요청 로그와 응답 코드를 확인합니다.",
+        "user 서비스에서 `user_id: 444`를 생성/등록하려 한 호출자, 요청 경로, 재시도 횟수를 추적해 비정상 재시도 루프나 테스트 트래픽 여부를 확인합니다.",
+        "2026-07-27T08:35:56~08:35:59 이후 usertimeline, hometimeline, composepost, text, poststorage의 container_memory/container_cpu/container_network_receive/transmit 상승이 실제 트래픽 증가와 일치하는지 RPS, 큐/백로그, 커넥션 수를 대조합니다.",
+        "2026-07-27T08:38:26~08:38:29 정점 시점에 redis/mongodb 및 지원 계층의 saturation 지표가 임계치에 도달했는지 확인해, 단순 처리량 증가인지 자원 병목인지 구분합니다.",
+        "trace 원본에서 nginx → composepost → 하위 서비스 경로의 에러율과 p95/p99 latency를 같은 윈도 기준으로 재확인하고, 수집 누락 구간이 있는지 점검합니다.",
+        "duplicate key 오류가 정상 시나리오라면 user 서비스 로그 레벨을 ERROR에서 WARN/INFO 또는 별도 비즈니스 이벤트로 조정해 장애 트리거 오탐을 줄입니다."
+      ],
+      "recovery": "현재 Evidence만으로 즉시 복구가 필요한 서비스 장애는 확인되지 않습니다."
+    }
+  }
+}

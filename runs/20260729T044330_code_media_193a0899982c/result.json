@@ -1,0 +1,113 @@
+{
+  "type": "DEPENDENCY",
+  "severity": "MID",
+  "service": "nginx",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 composepost가 하위 의존성인 `media-service:9090`을 호출하는 구간에서 이름 해석 또는 서비스 디스커버리에 실패한 것입니다. 로그에는 2026-07-27T08:42:00~2026-07-27T08:45:24 동안 composepost의 `Failed to connect media-service-client` 및 `TSocket::open() getaddrinfo() <Host: media-service Port: 9090>Name or service not known`가 반복되고, nginx에도 같은 흐름의 `ComposePost(): compost_post failure: Could not resolve host for client socket.`가 반복됩니다. trace는 `composepost`와 `text`, `user`, `usermention`, `urlshorten`, `uniqueid` 하위 호출이 낮은 지연과 `err=0`으로 보인 반면 nginx `/wrk2-api/post/compose`에서 `http_status_code=500`과 긴 `compose_post_client` 지연이 표면화되었다고 보고해, 관측된 trace 샘플만으로는 하류 전파가 확인되지 않습니다. 따라서 원인 단정은 제한적이지만, 에러 원문 기준으로는 nginx 자체보다는 composepost가 `media-service` 의존성을 해석/연결하지 못한 DEPENDENCY 장애로 보는 것이 가장 타당합니다. 로그와 메트릭 모두 일부만 관측된 상태이므로 이 결론은 부분 관측에 기반합니다.",
+      "propagation": "media-service 이름 해석/서비스 디스커버리 실패 → composepost의 media-service-client 연결 실패 → nginx의 ComposePost 호출 실패 → `/wrk2-api/post/compose` HTTP 500"
+    },
+    "summary": {
+      "highlight": "2026-07-27T08:42:00 이후 composepost의 `media-service:9090` 이름 해석/연결 실패가 nginx `/wrk2-api/post/compose` 500으로 표면화된 것으로 보는 것이 가장 유력합니다.",
+      "chips": [
+        "DEPENDENCY",
+        "composepost → media-service",
+        "nginx HTTP 500",
+        "부분 관측"
+      ],
+      "errorTags": [
+        "Could not resolve host for client socket",
+        "getaddrinfo() Name or service not known",
+        "Failed to connect media-service-client",
+        "http_status_code=500"
+      ],
+      "neutralTags": [
+        "metric은 호스트 전반 CPU/load 고갈 징후 약함",
+        "trace는 관측 샘플에서 composepost 하위 호출 err=0",
+        "로그 수집 5001/152585건 등 일부 관측"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "로그상 핵심 이상은 2026-07-27T08:42:00~2026-07-27T08:45:24 구간에 집중된 composepost/nginx 오류입니다. nginx는 \"ComposePost(): compost_post failure: Could not resolve host for client socket.\"를 39회(base=6, incid=33) 기록했고, composepost도 같은 시각대에 \"Failed to connect media-service-client\" 및 \"TSocket::open() getaddrinfo() <Host: media-service Port: 9090>Name or service not known\"를 39회(base=6, incid=33) 남겨 media-service 이름 해석/연결 실패가 지속된 것으로 보입니다. 다만 user의 E11000 duplicate key error(08:42:01.532160~08:45:25.460053)와 usertimeline/hometimeline의 대량 요청·완료 로그는 동시에 관측되지만, 일부만 본 상태(수집 5001/152585건, 39/41건 등)이므로 이 결론은 본 로그 범위에서의 일부 관측 결론입니다.",
+        "source": "nginx, composepost"
+      },
+      "trace": {
+        "conclusion": "관측된 트레이스에서는 하류 서비스로의 장애 전파 흔적이 보이지 않습니다. `composepost`와 그 하위 호출(`text`, `user`, `usermention`, `urlshorten`, `uniqueid`)은 모두 낮은 지연과 `err=0`으로 정상 범위인데, `nginx`의 `/wrk2-api/post/compose`는 `http_status_code=500`이 반복되고 `compose_post_client`는 수만 ms까지 길어져 상류(`nginx`)에서 문제가 표면화된 모습입니다. 따라서 현재 자료만 보면 진원은 하류보다는 `nginx` 측 처리/연결 구간으로 보는 것이 가장 타당하지만, 일부 샘플만 본 결론이라 원인 단정은 어렵습니다.",
+        "source": "nginx `/wrk2-api/post/compose` 500 exemplar와 `compose_post_client` 장기 지연, 그리고 `composepost`/하위 서비스의 정상 지연·무에러 집계",
+        "originService": "nginx"
+      },
+      "metric": {
+        "conclusion": "메트릭 관점에서는 트리거 시각인 2026-07-27T08:42:29.927874 직후 2026-07-27T08:42:38~2026-07-27T08:42:40에 text, hometimeline, usermention, uniqueid, usertimeline 쪽의 container_cpu 및 container_network_transmit/receive가 baseline 대비 동시에 크게 상승해 가장 먼저 이탈했습니다. 이어 2026-07-27T08:42:53~2026-07-27T08:43:25에는 composepost, poststorage, usertimelineredis, usertimelinemongodb, prometheus, jaegeragent까지 전파되었지만, __node__ 수준의 system_cpu_usage와 system_load1은 악화되지 않고 오히려 baseline보다 낮아 전반적 호스트 자원 고갈 징후는 약합니다. 다만 각 구간이 84/92건, 85/93건 수준으로 일부만 관측된 상태라 결론은 부분 관측에 기반한 판단입니다.",
+        "source": "metric"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "nginx",
+          "errors": 39,
+          "type": "`/wrk2-api/post/compose` HTTP 500 / `ComposePost(): compost_post failure: Could not resolve host for client socket.`"
+        },
+        {
+          "service": "composepost",
+          "errors": 39,
+          "type": "`Failed to connect media-service-client`, `TSocket::open() getaddrinfo() <Host: media-service Port: 9090>Name or service not known`"
+        },
+        {
+          "service": "text",
+          "type": "container_cpu 및 container_network 송수신 상승"
+        },
+        {
+          "service": "hometimeline",
+          "type": "container_cpu 및 container_network 송수신 상승"
+        },
+        {
+          "service": "usermention",
+          "type": "container_cpu 및 container_network 송수신 상승"
+        },
+        {
+          "service": "uniqueid",
+          "type": "container_cpu 및 container_network 송수신 상승"
+        },
+        {
+          "service": "usertimeline",
+          "type": "container_cpu 및 container_network 송수신 상승"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "로그 오류 집중 구간",
+          "value": "2026-07-27T08:42:00~2026-07-27T08:45:24"
+        },
+        {
+          "label": "nginx composepost 오류",
+          "value": "39회(base=6, incid=33)"
+        },
+        {
+          "label": "composepost media-service 연결 오류",
+          "value": "39회(base=6, incid=33)"
+        },
+        {
+          "label": "메트릭 최초 이탈",
+          "value": "2026-07-27T08:42:38~2026-07-27T08:42:40 text, hometimeline, usermention, uniqueid, usertimeline container_cpu/network 상승"
+        },
+        {
+          "label": "호스트 자원 고갈",
+          "value": "__node__ system_cpu_usage와 system_load1 악화 징후 약함"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "composepost 런타임 내부에서 `media-service:9090` 이름 해석과 TCP 연결을 직접 확인합니다. 예: composepost 컨테이너/파드에서 `getent hosts media-service`, `nslookup media-service`, `nc -vz media-service 9090` 실행.",
+        "서비스 디스커버리/DNS 설정을 점검합니다. `media-service` 서비스명, 네임스페이스, 포트 9090, endpoint 등록 여부, 최근 배포/설정 변경으로 이름이 바뀌었는지 확인합니다.",
+        "`media-service` 인스턴스가 실제로 존재하고 9090 포트를 리슨 중인지 확인합니다. 서비스/endpoint가 비어 있거나 배포가 누락된 경우 media-service 배포를 복구하거나 직전 정상 설정으로 롤백합니다.",
+        "DNS/서비스 등록이 정상인데 composepost만 실패하면 composepost의 media-service-client 설정, 캐시된 resolver 상태, 컨테이너 DNS 설정을 확인하고 필요 시 composepost를 순차 재시작합니다.",
+        "복구 후 nginx에서 `/wrk2-api/post/compose`의 `http_status_code=500` 반복 여부와 composepost 로그의 `TSocket::open() getaddrinfo()` 재발 여부를 같은 윈도 기준으로 재확인합니다.",
+        "동시에 관측된 user의 `E11000 duplicate key error`는 본 인과 사슬과 직접 연결된 증거가 부족하므로 별도 이슈로 분리해 중복 키 발생 조건과 요청 재시도 여부를 확인합니다."
+      ],
+      "recovery": "media-service 이름 해석/서비스 디스커버리 복구 후 composepost에서 media-service:9090 연결이 성공하고 nginx `/wrk2-api/post/compose`의 500이 사라지는지 확인합니다."
+    }
+  }
+}

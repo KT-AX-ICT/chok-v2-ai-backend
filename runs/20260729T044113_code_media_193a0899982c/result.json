@@ -1,0 +1,91 @@
+{
+  "type": "DEPENDENCY",
+  "severity": "HIGH",
+  "service": "nginx",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 composepost의 media-service-client가 `media-service` 호스트를 해석하거나 연결하지 못한 의존성/service discovery 장애입니다. nginx 로그의 `Could not resolve host for client socket` 39회와 composepost 로그의 `Failed to connect media-service-client` 39회가 2026-07-27T08:42:01.578490부터 2026-07-27T08:45:25.495778까지 같은 방향으로 반복됩니다. trace에서는 nginx의 `/wrk2-api/post/compose`가 14/14건 500인 반면 composepost 이후 text/user/uniqueid/urlshorten/usermention은 err=0이라, 하위 전체 체인의 일반 장애보다는 media-service 의존성 해석/연결 실패가 compose 경로에서 표면화된 것으로 보는 것이 더 타당합니다. 다만 media 로그는 missing이고 media trace도 비어 있으며 metric도 84/92건 일부 관측이므로, 이 결론은 일부만 본 상태의 가장 유력한 판단입니다.",
+      "propagation": "media-service 호스트 해석/서비스 디스커버리 실패 → composepost의 media-service-client 연결 실패 → nginx의 ComposePost 호출 실패 → `/wrk2-api/post/compose` 500 응답"
+    },
+    "summary": {
+      "highlight": "composepost가 media-service 의존 대상을 해석/연결하지 못해 nginx의 post compose API가 500으로 실패한 의존성 장애가 가장 유력합니다.",
+      "chips": [
+        "2026-07-27T08:42:01.578490~2026-07-27T08:45:25.495778",
+        "nginx `/wrk2-api/post/compose` 14/14건 500",
+        "composepost media-service-client 실패 39회",
+        "호스트 전체 포화 증거 약함"
+      ],
+      "errorTags": [
+        "Could not resolve host for client socket",
+        "Failed to connect media-service-client"
+      ],
+      "neutralTags": [
+        "media 로그/trace 미관측",
+        "metric 84/92건 부분 관측",
+        "trace상 composepost 이후 주요 하위 호출 err=0"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "08:42:00~08:45:25 구간에서 composepost가 media-service를 찾지 못해 연쇄 실패한 정황이 가장 강합니다. nginx에서 \"ComposePost(): compost_post failure: Could not resolve host for client socket\"가 39회 발생했고, composepost에서도 \"Failed to connect media-service-client\"가 39회 반복되며 시작 시점이 트리거 직후인 08:42:01.578490~08:45:25.495778로 이어집니다. 반면 user의 \"E11000 duplicate key error\"는 39회이지만 baseline=200으로 평소에도 흔한 패턴이라 단독 원인으로 보기 어렵습니다. 또한 media는 status=missing이라 미디어 서비스 본문 로그는 보지 못한 일부 관측 상태입니다.",
+        "source": "nginx, composepost"
+      },
+      "trace": {
+        "conclusion": "nginx의 `/wrk2-api/post/compose`에서 500 에러가 14/14건으로 관측됐지만, 하류인 `composepost` 서버와 그 하위 호출 `text` → `urlshorten`/`usermention`, `user`, `uniqueid`는 모두 에러 없이 정상 지연 범위였습니다. 따라서 이번 구간의 전파 경로는 하류 마이크로서비스 장애라기보다 nginx 경계에서 먼저 실패가 발생한 형태로 보이며, `composepost` 이후 체인은 본문 기준으로는 문제 징후가 약합니다. 다만 `media`, `usertimeline`, `hometimeline`, `poststorage`, `socialgraph`는 이 윈도에서 비어 있어 일부만 본 상태의 결론입니다.",
+        "source": "집계상 nginx `/wrk2-api/post/compose`는 14/14 에러이며, `composepost`는 `compose_post_server` 7/7건 모두 err=0이고 `text`, `user`, `uniqueid`, `urlshorten`, `usermention`도 모두 err=0입니다. 반면 nginx의 `compose_post_client` exemplar는 26.9초~64.5초급 장시간 지연으로 보이지만 하류 서비스의 서버 스팬은 정상이라, 본문 근거만으로는 하류 장애 전파보다 nginx 경계/상위단 실패가 더 직접적입니다.",
+        "originService": "nginx"
+      },
+      "metric": {
+        "conclusion": "트리거 시각 2026-07-27T08:42:29.927874 직후인 08:42:38~08:42:40부터 애플리케이션 계층(text, hometimeline, usertimeline, usermention, uniqueid, composepost, poststorage, urlshorten)에서 container_cpu와 container_network_transmit/receive가 baseline 대비 뚜렷하게 상승했습니다. 예를 들어 text의 container_cpu는 평균 5.216e-06에서 0.0002067로, hometimeline의 container_network_transmit는 5.598에서 158.2로, usertimeline의 container_network_receive는 20.7에서 245.1로 커졌고, 이후 08:43:05~08:43:25에 mongodb/redis, prometheus, cadvisor, nodeexporter, jaegeragent까지 확산됐습니다. 반면 __node__의 system_cpu_usage와 system_load1은 baseline 대비 상승하지 않아 호스트 전체 포화보다는 트리거 직후 서비스 간 트래픽/처리량 급증과 전파가 더 두드러집니다. 다만 수집이 84/92건 수준으로 일부만 본 상태라, 이 결론은 부분 관측 기반입니다.",
+        "source": "metric"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "nginx",
+          "errors": 39,
+          "type": "`ComposePost(): compost_post failure: Could not resolve host for client socket`; trace상 `/wrk2-api/post/compose` 14/14건 500"
+        },
+        {
+          "service": "composepost",
+          "errors": 39,
+          "type": "`Failed to connect media-service-client`"
+        },
+        {
+          "service": "media-service",
+          "type": "해석/연결 실패 대상 의존성; 본문 로그·trace는 미관측"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "장애 발생 구간",
+          "value": "2026-07-27T08:42:01.578490 ~ 2026-07-27T08:45:25.495778"
+        },
+        {
+          "label": "nginx compose API",
+          "value": "Trace에서 `/wrk2-api/post/compose` 500 에러 14/14건"
+        },
+        {
+          "label": "composepost/media 의존 호출",
+          "value": "nginx와 composepost 양쪽에서 media-service 연결/호스트 해석 실패 39회씩 반복"
+        },
+        {
+          "label": "리소스 관측",
+          "value": "2026-07-27T08:42:38~08:42:40부터 text, hometimeline, usertimeline, usermention, uniqueid, composepost, poststorage, urlshorten의 CPU·네트워크 상승; __node__ system_cpu_usage/system_load1은 baseline 대비 상승 없음"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "composepost 실행 환경에서 `media-service` 또는 설정된 media-service-client 대상 호스트명이 실제로 해석되는지 확인합니다(getent/nslookup/dig 등).",
+        "composepost의 media-service-client 설정값, 최근 배포/환경변수/서비스 디스커버리 설정 변경 여부를 2026-07-27T08:42:01.578490 전후로 대조합니다.",
+        "media-service의 실제 인스턴스, 서비스 엔드포인트, DNS/서비스 레지스트리 등록 상태를 확인합니다. Evidence상 media 로그/trace가 미관측이므로 원본 media 로그와 런타임 상태를 별도로 회수해 확인합니다.",
+        "DNS/서비스 레지스트리 누락 또는 잘못된 호스트명이 확인되면 media-service 엔드포인트 등록을 복구하거나 composepost 설정을 정상 호스트명으로 롤백합니다.",
+        "복구 후 nginx 경유로 `/wrk2-api/post/compose` 요청을 재검증하고, nginx의 `Could not resolve host for client socket`, composepost의 `Failed to connect media-service-client`, trace의 500 비율이 해소되는지 확인합니다.",
+        "08:42:38~08:43:25에 관측된 애플리케이션 및 mongodb/redis 계층의 CPU·네트워크 상승이 복구 후 정상 baseline으로 돌아오는지 확인합니다."
+      ],
+      "recovery": "media-service 호스트 해석/서비스 디스커버리 경로를 복구한 뒤 nginx의 `/wrk2-api/post/compose` 500과 composepost의 `Failed to connect media-service-client` 재발 여부를 확인합니다."
+    }
+  }
+}
