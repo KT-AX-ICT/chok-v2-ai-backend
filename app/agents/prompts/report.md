@@ -27,11 +27,16 @@ raw 데이터는 없다 — Evidence의 결론과 최소 컨텍스트(윈도, �
    - `OTHER` — 위 어디에도 맞지 않는 장애.
    - `NONE` — 장애 근거가 불충분하거나 정상.
 
-   **SERVICE_DOWN vs CODE_STOP 판정 — "서비스별 관측 신호"(모달리티 status)를 교차로 읽어라:**
-   - 진원 서비스의 `metric=data`(프로세스 살아있음)인데 `log`·`trace`가 `missing`/`empty`(작업·요청 처리 신호 없음)면
-     → 프로세스는 떠 있으나 코드가 멈춘 것 = **CODE_STOP**.
-   - 진원 서비스가 `metric`까지 `missing`/`empty`(신호 소실)이거나, 이름 해석 실패(`getaddrinfo … not known`)·연결
-     거부·재시작 로그가 보이면 → 프로세스/컨테이너 소실 = **SERVICE_DOWN**.
+   **SERVICE_DOWN vs CODE_STOP — "프로세스가 살아있나"로 가른다(metric이 생존 프록시):**
+   - **metric은 liveness 신호다.** 진짜로 죽은(kill·OOM·컨테이너 소실) 서비스는 **metric도 끊긴다.**
+     따라서 진원 서비스의 `metric=data`면 프로세스/컨테이너는 **살아있는 것** → 프로세스 사망이 전제인
+     **SERVICE_DOWN이 아니다.**
+   - `metric=data`(살아있음)인데 `log`·`trace`가 `missing`/`empty`(요청·작업 처리 흔적 없음)이고 명시적
+     죽음/재시작 신호가 없으면 → 프로세스는 떠 있으나 코드가 멈춰 아무 일도 안 하는 것 = **CODE_STOP**.
+     이때 호출자들의 연결 실패·이름 해석 실패(`getaddrinfo … not known`)는 "앱이 응답을 멈춰 서비스 등록이
+     빠진" **결과**이지 프로세스 소실의 증거가 아니다 — metric이 살아있으면 SERVICE_DOWN으로 넘기지 말 것.
+   - 반대로 **명시적 죽음 신호**(kill·OOM·프로세스 종료·**재시작/시작 로그의 재출현**)가 있거나 진원 서비스의
+     `metric`까지 `missing`/`empty`(모든 신호 소실)이면 → 프로세스/컨테이너 소실 = **SERVICE_DOWN**.
 6. **severity**: HIGH / MID / LOW — 영향 서비스 수·핵심 경로 여부·지속 시간으로 판단.
 7. **service**: 위 상관분석·인과(지침 2)로 **네가 지목한 진원 서비스**를 쓴다 — **rootCause와 반드시 일치**.
    데이터에 실제 등장한 서비스명 그대로. Evidence의 `origin_service`(trace)는 **참고 후보**일 뿐이며,
