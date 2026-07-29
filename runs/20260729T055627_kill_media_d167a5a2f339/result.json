@@ -1,0 +1,101 @@
+{
+  "type": "SERVICE_DOWN",
+  "severity": "MID",
+  "service": "media",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 media 서비스 프로세스/컨테이너가 2026-07-27T08:35:31.961753에 재시작되며 일시적으로 가용성이 끊긴 것입니다. 로그 Evidence의 서비스 시작 로그 재출현이 직접 근거이고, 그 직후 08:35:56~08:36:14부터 composepost, usertimeline, hometimeline, text, poststorage 계열의 자원 사용 증가가 관측되어 전파 정황과 맞습니다. 다만 log와 metric 모두 부분 관측 상태이며, 재시작의 직접 원인(OOM, 배포, kill 등)은 제공된 Evidence만으로 확인되지 않습니다. trace에서는 err=0과 HTTP 200이 관측되어 사용자 요청 실패까지 확정할 근거는 없습니다.",
+      "propagation": "media 재시작/일시 중단 → composepost의 게시글 작성 경로 → poststorage/usertimeline/hometimeline 및 같은 compose 경로의 text 계열 자원 사용 증가"
+    },
+    "summary": {
+      "highlight": "2026-07-27T08:35:31.961753에 media 재시작 로그가 관측된 직후 compose 경로 서비스들의 자원 사용이 상승한, 부분 관측 기반의 media SERVICE_DOWN 정황입니다.",
+      "chips": [
+        "부분 관측",
+        "media",
+        "SERVICE_DOWN",
+        "재시작 정황",
+        "trace err=0"
+      ],
+      "errorTags": [
+        "media service start 재출현"
+      ],
+      "neutralTags": [
+        "메트릭 이상은 트리거 이후 확산",
+        "trace 에러 미관측",
+        "user duplicate key는 만성 노이즈 가능성"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "부분 관측(예: media 98/114건, user 5033/219869건) 상태에서 본 로그 기준으로는 media 서비스가 가장 강한 진원 신호입니다. `media`에 서비스 시작 로그가 2026-07-27T08:35:31.961753에 `incid=1`로 추가 관측되어 평소(`baseline=1`)보다 재시작이 있었고, 이는 `SERVICE_DOWN`에 해당하는 재기동 정황입니다. 반면 user의 `E11000 duplicate key error`는 `baseline=200`인 반복 패턴이라 만성 노이즈로 보이며, 트리거 시각 전후의 급성 이상으로는 보이지 않습니다.",
+        "source": "media"
+      },
+      "trace": {
+        "conclusion": "이상 징후 없음 — 트레이스 집계 전 구간에서 err=0이며, nginx /wrk2-api/post/compose의 http_status_code=200(예: 2026-07-27T08:37:33.411438, 2026-07-27T08:38:21.659438)로 에러 스팬이 관측되지 않음. 다만 서비스별 호출 볼륨은 08:38로 갈수록 감소(예: composepost 08:36=24→08:38=16)하나, 본 입력만으로는 이를 장애로 단정할 근거(에러/비정상 지연 급증/에러 코드)가 없음.",
+        "source": "trace (2026-07-27T08:32:31.961753 ~ 2026-07-27T08:38:31.961753)",
+        "originService": "trace"
+      },
+      "metric": {
+        "conclusion": "부분 관측 상태(media 85/101건, 나머지 73/87건)지만, 트리거 시각 2026-07-27T08:35:31.961753 직후인 08:35:56~08:36:14부터 usertimeline/hometimeline/composepost/text/poststorage 계열에서 container_memory, container_cpu, container_network_receive/transmit가 동시 상승했습니다. 예를 들어 usertimeline container_memory는 baseline 2.028e+06에서 incident mean 2.734e+06으로 증가했고 onset은 08:35:57, peak는 2.892e+06@08:38:27이며, hometimeline과 composepost도 각각 onset 08:35:57에 메모리 증가가 시작돼 08:37:57~08:37:42에 정점을 찍었습니다. 즉, 메트릭상 뚜렷한 이상은 트리거 이후에 서비스 전반으로 확산된 자원 사용 증가로 보이며, 트리거 이전에 먼저 시작된 명확한 메트릭 이상은 보이지 않습니다.",
+        "source": "provided metric summary table"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "media",
+          "type": "SERVICE_DOWN"
+        },
+        {
+          "service": "composepost",
+          "type": "RESOURCE_INCREASE"
+        },
+        {
+          "service": "usertimeline",
+          "type": "RESOURCE_INCREASE"
+        },
+        {
+          "service": "hometimeline",
+          "type": "RESOURCE_INCREASE"
+        },
+        {
+          "service": "text",
+          "type": "RESOURCE_INCREASE"
+        },
+        {
+          "service": "poststorage",
+          "type": "RESOURCE_INCREASE"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "media 재시작",
+          "value": "08:35에 서비스 시작 로그가 다시 관측되어 일시 중단 정황이 있음"
+        },
+        {
+          "label": "자원 사용 확산",
+          "value": "08:35~08:36 이후 composepost·usertimeline·hometimeline·text·poststorage에서 CPU·메모리·네트워크 사용 증가"
+        },
+        {
+          "label": "요청 오류 관측",
+          "value": "trace 집계에서는 err=0이고 nginx /wrk2-api/post/compose는 200으로 관측됨"
+        },
+        {
+          "label": "호출량 변화",
+          "value": "08:38로 갈수록 서비스별 호출 볼륨이 감소했으나, 단독으로 장애라고 단정할 근거는 부족함"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "media 서비스에서 2026-07-27T08:35:31.961753 직전·직후의 컨테이너 이벤트, restart count, exit code, OOMKilled 여부, 배포/롤링업데이트 이력을 확인합니다.",
+        "media 인스턴스의 readiness/liveness 상태와 서비스 디스커버리 등록 상태를 확인하고, 비정상 인스턴스가 남아 있으면 격리 또는 재시작합니다.",
+        "composepost에서 media 호출 실패, timeout, retry 로그가 2026-07-27T08:35:31.961753 이후에 발생했는지 확인해 media 재시작과 호출 영향의 연결을 검증합니다.",
+        "08:35~08:38 구간에 usertimeline, hometimeline, composepost, text, poststorage의 CPU·메모리·네트워크 상승이 지속되는지 확인하고, 재시도 backlog나 큐 적체가 있으면 drain 또는 임시 스케일아웃을 수행합니다.",
+        "trace에서는 err=0 및 nginx /wrk2-api/post/compose 200이 관측되므로, 사용자 오류 영향은 원본 ingress/LB 로그와 SLO 지표로 추가 확인합니다.",
+        "user의 `E11000 duplicate key error`는 baseline 반복 패턴으로 제시되어 이번 급성 원인에서는 분리하고, 별도 데이터 중복 이슈로 추적합니다."
+      ],
+      "recovery": "media 서비스의 재시작 원인을 먼저 확인하고, 현재 인스턴스 정상성 및 compose 경로의 후속 자원 상승이 해소됐는지 검증합니다."
+    }
+  }
+}

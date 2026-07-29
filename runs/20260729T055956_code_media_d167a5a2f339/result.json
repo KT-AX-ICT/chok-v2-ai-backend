@@ -1,0 +1,92 @@
+{
+  "type": "CODE_STOP",
+  "severity": "HIGH",
+  "service": "media",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 `media` 서비스의 애플리케이션 레벨 처리/서비스 등록 중단입니다. 2026-07-27T08:42:00~2026-07-27T08:42:01부터 composepost가 `Failed to connect media-service-client` 및 `getaddrinfo() <Host: media-service Port: 9090> Name or service not known`를 기록했고, nginx도 같은 경로에서 host resolve 실패를 기록했습니다. 반면 media는 metric=data로 프로세스/컨테이너 생존 신호가 있어 프로세스 사망보다는 CODE_STOP 성격이 더 맞습니다. 다만 media 로그는 missing이고 trace는 empty라 media 내부의 직접 오류 원문은 확인하지 못했으므로, 일부만 본 상태의 결론입니다.",
+      "propagation": "media의 앱 처리/서비스 등록 중단 추정 → composepost의 media-service 이름 해석/연결 실패 → nginx compose_post_client 요청 장기 지연 및 compose-post 실패"
+    },
+    "summary": {
+      "highlight": "2026-07-27T08:42:00부터 media-service 해석/연결 실패로 compose-post가 실패했으며, media는 메트릭은 살아 있어 앱 처리/서비스 등록 중단(CODE_STOP)이 가장 유력합니다.",
+      "chips": [
+        "CODE_STOP",
+        "media",
+        "compose-post",
+        "부분 관측"
+      ],
+      "errorTags": [
+        "Failed to connect media-service-client",
+        "getaddrinfo() <Host: media-service Port: 9090> Name or service not known",
+        "Could not resolve host for client socket"
+      ],
+      "neutralTags": [
+        "media metric=data",
+        "media log=missing",
+        "media trace=empty",
+        "nginx compose_post_client 지연"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "로그상 2026-07-27T08:42:00~2026-07-27T08:42:01 구간부터 compose-post 요청이 실패했고, 핵심 오류는 `media-service`를 대상으로 한 연결/해석 실패입니다. `composepost`에서 `Failed to connect media-service-client`와 `getaddrinfo() <Host: media-service Port: 9090> Name or service not known`가 39회(base=6 incid=33, baseline=0) 나타났고, 같은 시각 `nginx`도 `Could not resolve host for client socket`로 실패를 기록했습니다. 다만 `[08:39:29.927874 ~ 08:45:29.927874] media status=missing 0/0건`이라 `media` 로그는 본문에서 보이지 않으므로, 현재 결론은 일부만 본 상태의 판단입니다.",
+        "source": "log"
+      },
+      "trace": {
+        "conclusion": "관측된 경로에서는 nginx의 compose_post_client만 26.882~64.485초로 비정상적으로 길고, 그 아래 composepost 서버와 text/user/uniqueid/urlshorten/usermention은 모두 정상 지연이다. 다만 media, usertimeline, hometimeline, poststorage, socialgraph는 empty라 하류 전체를 다 보지 못한 상태여서, 이 자료만으로 더 깊은 진원 서비스는 확정할 수 없다.",
+        "source": "nginx compose_post_client exemplar(08:44:10.292601 64.484757s, 08:45:20.134290 48.307351s, 08:44:47.890029 26.882354s)와 composepost/text/user/uniqueid/urlshorten/usermention 집계"
+      },
+      "metric": {
+        "conclusion": "이상 징후 발견 — 2026-07-27T08:42:38 무렵부터 여러 컨테이너/노드에서 container_cpu 및 container_network_{receive,transmit} 값이 baseline 대비 크게 상승했으며, 피크가 2026-07-27T08:45:23~2026-07-27T08:45:25에 관측됨. (예: text/hometimeline의 container_cpu, usermention/uniqueid의 container_cpu, usertimelocal 관련 네트워크 receive/transmit, prometheus/jageragent 등 전반 지표 상승)",
+        "source": "metric-agent(scan)"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "media",
+          "type": "진원 추정: 앱 처리/서비스 등록 중단"
+        },
+        {
+          "service": "composepost",
+          "errors": 39,
+          "type": "media-service 호출 실패"
+        },
+        {
+          "service": "nginx",
+          "errors": 39,
+          "type": "compose_post_client 장기 지연/실패"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "게시물 작성 실패",
+          "value": "08:42부터 composepost에서 media-service 연결/해석 실패가 39회 관측됨"
+        },
+        {
+          "label": "하위 media 호출 불가",
+          "value": "composepost가 `media-service:9090` 이름 해석과 연결에 실패함"
+        },
+        {
+          "label": "프런트 요청 지연",
+          "value": "08:44~08:45에 nginx compose_post_client가 26.882~64.485초까지 길어짐"
+        },
+        {
+          "label": "리소스 상승",
+          "value": "08:42 이후 여러 컨테이너의 CPU·네트워크 사용량이 증가했고 08:45경 피크가 관측됨"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "composepost 컨테이너에서 `media-service:9090`에 대해 이름 해석과 TCP 연결을 즉시 확인합니다(`getent hosts media-service`, `nc -vz media-service 9090` 등).",
+        "서비스 디스커버리/오케스트레이션에서 `media-service` 엔드포인트가 2026-07-27T08:42:00 이후 제거되었거나 readiness 실패로 제외되었는지 확인합니다.",
+        "media 컨테이너는 메트릭이 수집되고 있으므로 프로세스 생존을 전제로, health/readiness 응답, 9090 listen 상태, 스레드/고루틴 덤프를 확인해 앱 요청 처리 루프가 멈췄는지 확인합니다.",
+        "덤프와 상태를 확보한 뒤 media 애플리케이션을 재시작하거나 최근 배포/설정 변경이 있으면 롤백해 `media-service` 등록을 복구합니다.",
+        "복구 후 composepost의 `Failed to connect media-service-client` 및 `getaddrinfo() <Host: media-service Port: 9090> Name or service not known` 재발 여부와 nginx `compose_post_client` 지연이 정상화되는지 확인합니다.",
+        "media 로그 파일이 missing으로 관측된 원인(로그 경로, 마운트, 권한, 로테이션, 수집기 설정)을 확인해 동일 장애 재발 시 media 내부 예외를 직접 볼 수 있게 복구합니다."
+      ],
+      "recovery": "우선 media-service의 서비스 등록/요청 처리 상태를 복구하고, 필요 시 media 애플리케이션을 재시작 또는 최근 변경을 롤백합니다."
+    }
+  }
+}

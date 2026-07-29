@@ -1,0 +1,113 @@
+{
+  "type": "CODE_STOP",
+  "severity": "HIGH",
+  "service": "media",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 `media` 서비스의 애플리케이션/서비스 등록 경로가 컨테이너는 살아있는 상태(metric=data)에서 `media-service:9090` 이름 해석 또는 접속을 제공하지 못한 것입니다. 이로 인해 `composepost`에서 `Failed to connect media-service-client`와 `TSocket::open() getaddrinfo() <Host: media-service Port: 9090>Name or service not known`가 반복되었고, 상위 `nginx`는 `ComposePost(): compost_post failure: Could not resolve host for client socket.` 및 `/wrk2-api/post/compose` 500을 남겼습니다. `media`는 log=missing, trace=empty라 직접적인 `media` 애플리케이션 로그/스팬을 보지 못한 일부 관측 기반 결론이지만, metric=data이므로 프로세스/컨테이너 소실보다는 살아있는 프로세스의 처리·등록 중단(CODE_STOP)이 더 타당합니다.",
+      "propagation": "media → composepost → nginx → /wrk2-api/post/compose 사용자 요청"
+    },
+    "summary": {
+      "highlight": "트리거 시각 2026-07-27T08:42:29.927874 전후 `media`의 `media-service:9090` 엔드포인트/등록 경로가 살아있는 컨테이너 안에서 멈춘 것으로 보여, `composepost` 호출 실패가 `nginx`의 게시물 작성 API 500과 장기 지연으로 전파되었습니다.",
+      "chips": [
+        "CODE_STOP",
+        "media",
+        "composepost",
+        "nginx 500"
+      ],
+      "errorTags": [
+        "Failed to connect media-service-client",
+        "getaddrinfo media-service",
+        "Could not resolve host",
+        "HTTP 500"
+      ],
+      "neutralTags": [
+        "media metric=data",
+        "media log=missing",
+        "media trace=empty",
+        "일부 관측 기반"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "트리거 시각 2026-07-27T08:42:29.927874 전후에 `composepost`에서 `Failed to connect media-service-client`와 `TSocket::open() getaddrinfo() <Host: media-service Port: 9090>Name or service not known`가 반복되었고, `nginx`도 `ComposePost(): compost_post failure: Could not resolve host for client socket.`를 기록했습니다. 연결 실패의 대상이 `media-service`이므로 로그 관점의 진원은 `media-service`로 보는 것이 가장 타당합니다. 다만 수집 구간에서 `media`는 `missing 0/0건`이라 해당 서비스 본문 로그를 직접 보지 못한 일부 관측 상태이므로, 결론 확신도는 다소 낮춥니다.",
+        "source": "nginx, composepost"
+      },
+      "trace": {
+        "conclusion": "nginx의 /wrk2-api/post/compose에서 500이 관측되고, 동시에 nginx의 compose_post_client는 p50 2.681e+04ms, p95/max 6.448e+04ms로 매우 길게 보입니다. 다만 하류인 composepost, text, user, uniqueid, usermention, urlshorten은 모두 에러 없이 짧은 지연으로 정상이며, media는 status=empty 0/0건이라 이 트레이스만으로는 더 깊은 진원 서비스를 확정하기 어렵습니다.",
+        "source": "partial observation: media status=empty 0/0건; composepost/text/user/uniqueid/usermention/urlshorten은 수집됨. 하류 서비스 스팬은 모두 정상이고 nginx만 오류/장기 지연이 보임."
+      },
+      "metric": {
+        "conclusion": "이상 징후 발견 — 2026-07-27T08:42:38 이후(트리거 2026-07-27T08:42:29.927874) 여러 컨테이너 지표에서 container_cpu 및 container_network_* 급증이 동시 발생(예: text/hometimeline/usermention/uniqueid의 container_cpu 이상점, composepost/usertimeline/hometimeline 등의 container_network_receive/transmit 이상점).",
+        "source": "text.container_cpu: baseline max=1.827e-05 → incident max=0.0003282, onset=5.374e-05@08:42:38, peak=0.0003282@08:45:23\nhometimeline.container_cpu: baseline max=2.808e-05 → incident max=0.0003634, onset=7.883e-05@08:42:38, peak=0.0003634@08:45:23\ncomposepost.container_network_transmit: baseline max=208.6 → incident max=208.6, mean incident=124(최소 41.64), onset=41.64@08:42:40, peak=208.6@08:45:25\nusertimeline.container_network_receive: baseline max=72.4 → incident max=392.8, onset=91.79@08:42:40, peak=392.8@08:45:25\nprometheus.container_network_receive: baseline max=1.042e+04 → incident max=2.269e+04, onset=1.492e+04@08:43:25, peak=2.269e+04@08:45:25\nnodeexporter/container_network_transmit: baseline max=498.1 → incident max=1088, onset=716@08:43:25, peak=1088@08:45:10"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "media",
+          "type": "진원 후보: 컨테이너는 살아있으나 media-service 엔드포인트/등록 경로가 응답하지 않은 것으로 보임"
+        },
+        {
+          "service": "composepost",
+          "errors": 39,
+          "type": "media-service 이름 해석 및 연결 실패"
+        },
+        {
+          "service": "nginx",
+          "errors": 39,
+          "type": "/wrk2-api/post/compose 500 및 장기 지연"
+        },
+        {
+          "service": "text",
+          "type": "CPU 지표 이상점 관측, 애플리케이션 에러 근거는 없음"
+        },
+        {
+          "service": "hometimeline",
+          "type": "CPU/네트워크 지표 이상점 관측, 애플리케이션 에러 근거는 없음"
+        },
+        {
+          "service": "usermention",
+          "type": "CPU 지표 이상점 관측, 애플리케이션 에러 근거는 없음"
+        },
+        {
+          "service": "uniqueid",
+          "type": "CPU 지표 이상점 관측, 애플리케이션 에러 근거는 없음"
+        },
+        {
+          "service": "usertimeline",
+          "type": "네트워크 수신 지표 이상점 관측, 애플리케이션 에러 근거는 없음"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "게시물 작성 실패",
+          "value": "08:42 전후 `nginx`의 `/wrk2-api/post/compose`에서 500이 관측됨"
+        },
+        {
+          "label": "media 호출 실패",
+          "value": "`composepost`가 `media-service:9090` 이름을 해석하지 못해 media 클라이언트 연결에 실패"
+        },
+        {
+          "label": "응답 지연",
+          "value": "`nginx`의 compose_post 호출 지연이 p50 약 26.8초, p95/max 약 64.5초까지 증가"
+        },
+        {
+          "label": "주변 서비스 부하 상승",
+          "value": "08:42~08:45에 text·hometimeline·usermention·uniqueid CPU와 usertimeline 등 네트워크 사용이 함께 상승"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "`media` 컨테이너/프로세스가 metric상 살아있는 상태이므로, 먼저 `media` 내부 애플리케이션의 worker/thread 상태와 `9090` 리스닝 여부를 확인합니다.",
+        "서비스 디스커버리/DNS에서 `media-service` 엔드포인트가 존재하는지, 포트가 `9090`으로 등록되어 있는지 확인하고 누락·오등록이면 재등록 또는 설정 롤백을 수행합니다.",
+        "`media` 애플리케이션이 떠 있지만 엔드포인트 등록이나 요청 처리가 멈춘 상태라면 `media` 서비스를 재시작 또는 재배포하여 서비스 등록과 Thrift 서버를 복구합니다.",
+        "`composepost` 환경에서 `media-service:9090` 이름 해석과 접속을 직접 확인하고, `Failed to connect media-service-client` 및 `TSocket::open() getaddrinfo() <Host: media-service Port: 9090>Name or service not known` 로그가 더 이상 발생하지 않는지 확인합니다.",
+        "`nginx`를 통해 `/wrk2-api/post/compose` 카나리 요청을 실행해 2xx 응답과 정상 지연을 확인하고, `ComposePost(): compost_post failure: Could not resolve host for client socket.` 및 500 재발 여부를 감시합니다.",
+        "최근 `media` 서비스명, 포트, 서비스 등록 로직, 배포 설정 변경이 있었는지 확인하고 이번 증상과 시간대가 맞으면 해당 변경을 롤백하거나 수정 배포합니다."
+      ],
+      "recovery": "`media` 서비스의 `media-service:9090` 등록/응답 경로를 복구한 뒤, `composepost`에서 media 호출이 성공하고 `nginx`의 `/wrk2-api/post/compose` 500 및 장기 지연이 사라지는지 확인합니다."
+    }
+  }
+}

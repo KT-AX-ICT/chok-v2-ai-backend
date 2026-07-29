@@ -1,0 +1,102 @@
+{
+  "type": "PERFORMANCE",
+  "severity": "HIGH",
+  "service": "socialgraph",
+  "detail": {
+    "rca": {
+      "rootCause": "부분 관측된 metric/trace 기준의 가장 유력한 근본 원인은 socialgraph의 소셜 그래프 조회 경로 성능 저하입니다. trace에서 nginx → composepost → hometimeline → socialgraph 방향으로 지연이 모였고, 특히 socialgraph 하류의 get_followers_server 및 social_graph_redis_get_client 구간에서 추가 지연이 관측되었습니다. 동시에 2026-07-27T08:28:59.924298 직후인 08:29:05~08:29:08부터 여러 서비스의 CPU·메모리·네트워크 사용량이 기준선에서 이탈하고, 08:31:50~08:31:53까지 상승이 이어졌으며, 호스트 CPU도 incident 구간에서 99.8까지 치솟았습니다. socialgraph를 포함한 서비스들의 metric=data가 있어 프로세스 사망 증거는 없으므로 SERVICE_DOWN이 아니라 리소스 포화/지연에 의한 PERFORMANCE로 판단합니다. user의 MongoDB 중복키 오류는 2026-07-27T08:28:48.394759~08:31:57.208244에 발생했으나, 주 지연 경로와 직접 연결된 근거는 없어 별도 데이터/ID 생성 이슈 또는 부수 영향으로 보는 것이 안전합니다.",
+      "propagation": "socialgraph(social_graph_redis_get_client/get_followers_server 지연) → hometimeline(write_home_timeline_server) → composepost(write_home_timeline_client) → nginx. user의 MongoDB E11000 duplicate key 오류는 같은 윈도에 관측됐지만 이 전파 경로와의 직접 인과는 확인되지 않았습니다."
+    },
+    "summary": {
+      "highlight": "부분 관측 기준으로 2026-07-27T08:28:59.924298 전후 socialgraph 조회 지연과 호스트 CPU 포화가 composepost·hometimeline·nginx 경로로 전파된 성능 장애가 가장 유력합니다.",
+      "chips": [
+        "socialgraph",
+        "PERFORMANCE",
+        "부분 관측",
+        "tail latency",
+        "호스트 CPU 포화"
+      ],
+      "errorTags": [
+        "social_graph_redis_get_client 지연",
+        "E11000 duplicate key error"
+      ],
+      "neutralTags": [
+        "트리거: metric, trace",
+        "프로세스 사망 증거 없음",
+        "user 중복키 오류는 인과 미확인"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "이상 징후 발견 — 2026-07-27T08:28:48.394759~08:31:57.208244 구간에 user 로그에 MongoDB 삽입 중복키 에러가 발생함. (UserHandler.h:190:RegisterUserWithId) \"Failed to insert user j1 to MongoDB: E11000 duplicate key error collection: user.user index: user_id_1 dup key: { user_id: 444 }\"",
+        "source": "user\tERROR\t×34(base=3 incid=31 baseline=200)\t08:28:48.394759~08:31:57.208244\t[2026-Jul-27 08:28:48.394759] <error>: (UserHandler.h:190:RegisterUserWithId) Failed to insert user j1 to MongoDB: E11000 duplicate key error collection: user.user index: user_id_1 dup key: { user_id: 444 }"
+      },
+      "trace": {
+        "conclusion": "부분 관측된 trace 집계(예: 여러 서비스가 13/16, 39/48건 수준) 기준으로는, 에러보다는 지연 전파가 핵심입니다. nginx → composepost → hometimeline → socialgraph 경로에서 tail latency가 가장 두드러지며, composepost의 write_home_timeline_client 지연이 hometimeline의 write_home_timeline_server로 이어지고 그 하류의 get_followers_server와 social_graph_redis_get_client에서 추가 지연이 보입니다. 따라서 진원은 최하류 의존성인 socialgraph로 보는 것이 가장 타당합니다.",
+        "source": "trace 집계와 exemplar",
+        "originService": "socialgraph"
+      },
+      "metric": {
+        "conclusion": "부분 관측(서비스별 77/86건, __node__ 96/109건) 상태이지만, 메트릭상 이상은 분명합니다. 트리거 시각 2026-07-27T08:28:59.924298 직후인 08:29:05~08:29:08에 여러 서비스의 container_memory, container_cpu, container_network_receive/transmit가 동시에 baseline에서 이탈했고, 08:31:50~08:31:53까지 상승이 이어졌습니다. 특히 __node__의 system_cpu_usage가 incident 구간에서 99.8로 치솟아 호스트 수준의 포화가 보이며, 단일 서비스 하나보다는 여러 백엔드 서비스와 노드 전체에 걸친 부하/연쇄 증가 양상으로 보입니다. 다만 이 메트릭만으로 최초 유발 서비스를 단정할 수는 없습니다.",
+        "source": "metric"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "nginx",
+          "type": "latency"
+        },
+        {
+          "service": "composepost",
+          "type": "latency"
+        },
+        {
+          "service": "hometimeline",
+          "type": "latency"
+        },
+        {
+          "service": "socialgraph",
+          "type": "latency"
+        },
+        {
+          "service": "user",
+          "errors": 34,
+          "type": "error"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "게시 경로 지연",
+          "value": "08:29~08:31에 nginx→composepost→hometimeline→socialgraph 경로의 tail latency 증가"
+        },
+        {
+          "label": "소셜 그래프 조회 지연",
+          "value": "socialgraph의 팔로워 조회와 Redis 조회 구간에서 추가 지연 관측"
+        },
+        {
+          "label": "호스트 CPU 포화",
+          "value": "08:29 직후 incident 구간에서 CPU 사용률이 99.8까지 상승"
+        },
+        {
+          "label": "백엔드 리소스 동시 상승",
+          "value": "08:29~08:31에 여러 서비스의 CPU·메모리·네트워크 사용량이 기준선에서 이탈"
+        },
+        {
+          "label": "사용자 등록 실패",
+          "value": "08:28~08:31에 MongoDB duplicate key 오류 34회 발생"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "2026-07-27T08:29:05~08:31:53 구간 socialgraph 인스턴스와 해당 호스트의 CPU·메모리·네트워크 사용률을 확인해 포화된 인스턴스/노드를 식별합니다.",
+        "trace에서 지연이 두드러진 socialgraph의 get_followers_server 및 social_graph_redis_get_client 구간을 확인하고, 같은 시간대 Redis slowlog·연결 수·CPU·네트워크 지연을 대조합니다.",
+        "socialgraph가 포화 상태이면 인스턴스를 증설하거나 포화 노드에서 재배치하고, composepost/hometimeline의 socialgraph 호출에 임시 rate limit 또는 backpressure를 적용합니다.",
+        "Redis 조회 지연이 확인되면 hot key 여부, connection pool 고갈, Redis failover 필요성을 점검하고 socialgraph의 Redis timeout·circuit breaker 설정을 조정합니다.",
+        "user 로그의 \"E11000 duplicate key ... user_id: 444\" 34건에 대해 user j1 등록 요청 재시도 패턴과 uniqueid 발급 결과를 확인하고, 동일 user_id 재사용을 막도록 ID 생성/등록 멱등성 처리를 보강합니다."
+      ],
+      "recovery": "우선 socialgraph의 소셜 그래프 조회 경로 부하를 낮추고, 필요 시 socialgraph 인스턴스 확장/격리 및 Redis 조회 지연 여부 확인으로 게시 경로 지연을 완화합니다. user의 MongoDB 중복키 오류는 동일 윈도에 관측된 별도 이슈로 분리해 재시도/ID 생성 경로를 점검합니다."
+    }
+  }
+}

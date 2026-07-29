@@ -1,0 +1,22 @@
+{
+  "scenario": "code_media",
+  "ts": "20260729T055804",
+  "set_hash": "d167a5a2f339",
+  "prompt_hashes": {
+    "router": "fd8f80ff3a39",
+    "scan": "26160e3d7b41",
+    "log": "a7f0287ea469",
+    "metric": "9d3183d15707",
+    "trace": "505da9f36369",
+    "report": "812486e7ed27"
+  },
+  "models": {
+    "report": "gpt-5.5-2026-04-23",
+    "analysis": "gpt-5.4-mini-2026-03-17",
+    "light": "gpt-5.4-nano-2026-03-17"
+  },
+  "latency_s": 111.22,
+  "pred_type": "CODE_STOP",
+  "pred_service": "media",
+  "pred_severity": "HIGH"
+}

@@ -1,0 +1,85 @@
+{
+  "type": "SERVICE_DOWN",
+  "severity": "LOW",
+  "service": "media",
+  "detail": {
+    "rca": {
+      "rootCause": "가장 유력한 근본 원인은 media 서비스의 프로세스/컨테이너 재시작입니다. 2026-07-27T08:35:31.961753에 media에서 `Starting the media-service server...` lifecycle 로그가 발생해 명시적 재기동 신호가 확인됩니다. 다만 재시작을 유발한 직접 원인(OOM, 배포, 설정, fatal error 등)은 제공된 Evidence만으로는 확인되지 않습니다.",
+      "propagation": "media 재시작/일시 중단 → media 의존 요청의 순간적 처리 공백 가능성 → 관측된 trace에서는 5xx나 지연 급증 없이 회복된 것으로 보임"
+    },
+    "summary": {
+      "highlight": "2026-07-27T08:35:31.961753에 media 서비스 재시작 신호가 확인됐지만, 관측된 trace에서는 오류 전파가 확인되지 않아 영향은 제한적으로 보입니다.",
+      "chips": [
+        "media",
+        "SERVICE_DOWN",
+        "restart",
+        "trace err=0"
+      ],
+      "errorTags": [
+        "Starting the media-service server..."
+      ],
+      "neutralTags": [
+        "부분 관측",
+        "metric 증가"
+      ]
+    },
+    "evidence": {
+      "log": {
+        "conclusion": "트리거 시각 2026-07-27T08:35:31.961753에 media에서 `Starting the media-service server...` lifecycle 로그가 incid 1건으로 확인되며(base=1, incid=1, baseline=1), 평소 대비 재시작 신호가 있습니다. 지침상 이는 SERVICE_DOWN으로 해석되므로 진원은 media로 보는 것이 타당합니다. 다만 user/socialgraph 등은 일부만 수집된 상태(예: user 5033/219869건, socialgraph 5001/220401건)라 전체 영향 범위는 제한적으로만 판단해야 합니다.",
+        "source": "media"
+      },
+      "trace": {
+        "conclusion": "이상 징후 없음 — 트레이스 집계 전 구간에서 err=0이고 nginx 포함 주요 span들의 http_status_code=200(예: 2026-07-27T08:37:33.411438, 2026-07-27T08:38:21.659438)로 기록되었으며, 응답 지연도 p50~p95가 전반적으로 수 ms~수십 ms 범위에서 큰 급증 징후는 보이지 않습니다.",
+        "source": "trace"
+      },
+      "metric": {
+        "conclusion": "이상 징후 발견 — 2026-07-27T08:35:31.961753 이후 컨테이너별 container_memory 및 container_network_* 지표가 동시다발적으로 상승(최대치가 08:38:xx에 집중). 예: usertimeline/container_memory onset=2.716e+06@08:35:57 peak=2.892e+06@08:38:27, hometimeline/container_memory peak=2.294e+06@08:37:57. 네트워크도 증가: usertimeline/container_network_receive peak=471.5@08:38:28, prometheus/container_network_receive peak=2.103e+04@08:38:28.",
+        "source": "metric (윈도: 2026-07-27T08:32:31.961753 ~ 2026-07-27T08:38:31.961753, 트리거: 2026-07-27T08:35:31.961753)"
+      }
+    },
+    "impact": {
+      "affected": [
+        {
+          "service": "media",
+          "type": "lifecycle restart"
+        },
+        {
+          "service": "usertimeline",
+          "type": "resource increase"
+        },
+        {
+          "service": "hometimeline",
+          "type": "resource increase"
+        }
+      ],
+      "metrics": [
+        {
+          "label": "media 재시작 신호",
+          "value": "2026-07-27T08:35:31.961753에 `Starting the media-service server...` 로그 1건 확인"
+        },
+        {
+          "label": "트레이스 오류",
+          "value": "관측 구간에서 err=0, nginx 포함 주요 span은 HTTP 200으로 기록"
+        },
+        {
+          "label": "리소스 증가",
+          "value": "08:35 이후 여러 컨테이너의 메모리·네트워크 사용량이 08:38 무렵까지 상승"
+        },
+        {
+          "label": "영향 범위 신뢰도",
+          "value": "일부 서비스 로그는 부분 수집 상태라 전체 영향 범위 판단은 제한적"
+        }
+      ]
+    },
+    "actions": {
+      "steps": [
+        "media 컨테이너/프로세스의 현재 상태를 확인하고, 2026-07-27T08:35:31.961753 전후의 종료 코드, 재시작 횟수, OOMKilled 여부를 점검한다.",
+        "media 로그에서 `Starting the media-service server...` 직전의 shutdown, panic, fatal, signal, dependency error 로그를 찾아 재시작 원인을 확인한다.",
+        "media로 요청을 보내는 composepost 등 호출 경로에서 같은 시각대의 연결 실패나 5xx가 있었는지 추가 로그 원본으로 확인한다. 현재 trace Evidence에서는 err=0이므로 사용자 영향은 제한적으로 보인다.",
+        "08:35 이후 여러 컨테이너의 메모리·네트워크 사용 증가가 재시작 복구 트래픽인지 별도 부하인지 확인하기 위해 usertimeline, hometimeline, prometheus 주변 지표를 대조한다.",
+        "media 재시작 원인이 배포/설정 변경이면 해당 변경을 롤백하거나 설정을 수정하고, 원인이 OOM/리소스라면 media의 메모리 제한과 요청 처리량을 조정한다."
+      ],
+      "recovery": "media 서비스의 재시작 직후 현재 정상 기동 여부와 최근 재시작 원인을 우선 확인합니다."
+    }
+  }
+}
