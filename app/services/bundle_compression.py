@@ -30,7 +30,7 @@ from drain3 import TemplateMiner
 from drain3.masking import MaskingInstruction
 from drain3.template_miner_config import TemplateMinerConfig
 
-from app.schemas.contracts import ModalityItem
+from app.schemas.contracts import IngestBundle, ModalityItem
 
 _EMPTY = "(없음)"
 
@@ -107,7 +107,86 @@ def make_miner() -> TemplateMiner:
     return TemplateMiner(config=config)
 
 
-def compress_logs(items: list[ModalityItem], trigger_time: str | None = None) -> str:
+# 서비스 생애주기 마커 — 서버 시작/재시작/종료. 일반 "start"는 피하고 서버 lifecycle만 특정.
+# 재시작 로그 = 그 서비스가 다운됐다 살아났다는 강한 신호인데 저빈도라 surprise 정렬에 묻히므로
+# 하이라이트로 따로 부각한다.
+_LIFECYCLE_RE = re.compile(
+    r"(starting the .*server|server (started|starting|stopped|listening)|shutting down|shutdown|"
+    r"received sig(kill|term)|out of memory|\bOOM\b|\bkilled\b|\bpanic\b|terminated|exiting)",
+    re.I,
+)
+_TRIGGER_WINDOW_S = 3.0  # 트리거 시각 ±윈도(초) — 이 안의 로그를 진원 후보로 부각
+_HIGHLIGHT_CAP = 8  # 하이라이트 그룹당 최대 줄 수(플러딩 방지)
+
+
+def _build_highlight(
+    groups: dict[tuple, dict],
+    records: list[dict],
+    trigger_dt: datetime | None,
+    triggered_by: list[str] | None,
+    has_profile: bool,
+) -> str:
+    """정상 dedup 목록 앞에 붙일 '진원 후보 하이라이트' 섹션. 신호 없으면 빈 문자열.
+
+    - lifecycle 마커: 서비스 재시작/종료 로그를 base/incid/baseline과 함께(재시작 서비스 부각).
+    - 트리거 로그: log 트리거일 때 트리거 시각 ±윈도의 로그(에러 우선·dedup·상한).
+    """
+    if trigger_dt is None:
+        return ""
+    parts: list[str] = []
+
+    life = [
+        (k, g)
+        for k, g in groups.items()
+        if _LIFECYCLE_RE.search(g["template"] or "") or _LIFECYCLE_RE.search(g["sample"] or "")
+    ]
+    if life:
+        life.sort(key=lambda kg: (-kg[1]["incid"], -kg[1]["count"]))
+        block = ["## 진원 후보 — 서비스 lifecycle(시작/재시작/종료) 로그"]
+        for (service, level, _), g in life[:_HIGHLIGHT_CAP]:
+            span = (
+                short_ts(g["first"])
+                if g["count"] == 1
+                else f"{short_ts(g['first'])}~{short_ts(g['last'])}"
+            )
+            tag = f"base={g['base']} incid={g['incid']}"
+            if has_profile:
+                tag += f" baseline={g['baseline'] or 0}"
+            block.append(f"{service or '?'}\t{level}\t×{g['count']}({tag})\t{span}\t{g['sample']}")
+        parts.append("\n".join(block))
+
+    if triggered_by and "log" in triggered_by:
+        near = [
+            r
+            for r in records
+            if r["ts_dt"] and abs((r["ts_dt"] - trigger_dt).total_seconds()) <= _TRIGGER_WINDOW_S
+        ]
+        seen: dict[tuple, dict] = {}
+        for r in near:
+            seen.setdefault((r["service"], r["cluster_id"]), r)
+        ded = sorted(seen.values(), key=lambda r: (LEVEL_ORDER.get(r["level"], 2), r["ts"]))
+        if ded:
+            block = [
+                f"## 진원 후보 — 트리거 시각(±{int(_TRIGGER_WINDOW_S)}s) 로그 "
+                f"[트리거: {', '.join(triggered_by)}]"
+            ]
+            for r in ded[:_HIGHLIGHT_CAP]:
+                block.append(f"{r['service'] or '?'}\t{r['level']}\t{short_ts(r['ts'])}\t{r['raw']}")
+            parts.append("\n".join(block))
+
+    if not parts:
+        return ""
+    return (
+        "# ▼ 진원 후보 하이라이트 (surprise 정렬과 무관하게 부각 — 최우선 검토)\n"
+        + "\n".join(parts)
+    )
+
+
+def compress_logs(
+    items: list[ModalityItem],
+    trigger_time: str | None = None,
+    triggered_by: list[str] | None = None,
+) -> str:
     """Drain으로 로그 템플릿을 학습해 `서비스·레벨·×횟수(base/incid)·최초~최후·샘플` 1줄로 축약.
 
     정규식 하드코딩 패턴이 아니라 데이터에서 템플릿을 추출하므로, 사전에 모르는
@@ -131,6 +210,7 @@ def compress_logs(items: list[ModalityItem], trigger_time: str | None = None) ->
     trigger_dt = parse_ts(trigger_time) if trigger_time else None
     baseline_profile = _load_baseline_profile()
     groups: dict[tuple, dict] = {}
+    records: list[dict] = []  # 하이라이트(트리거 시각 로그)용 개별 라인 기록
     for item in items:
         level_m = LEVEL_RE.search(item.raw)
         level = level_m.group(1).upper() if level_m else "-"
@@ -139,6 +219,11 @@ def compress_logs(items: list[ModalityItem], trigger_time: str | None = None) ->
         key = (item.service, level, cluster["cluster_id"])
         ts_dt = parse_ts(item.timestamp)
         is_base = bool(trigger_dt and ts_dt and ts_dt < trigger_dt)
+        if trigger_dt is not None:
+            records.append({
+                "service": item.service, "level": level, "cluster_id": cluster["cluster_id"],
+                "ts": item.timestamp, "ts_dt": ts_dt, "raw": item.raw,
+            })
         g = groups.get(key)
         if g is None:
             groups[key] = {
@@ -187,7 +272,29 @@ def compress_logs(items: list[ModalityItem], trigger_time: str | None = None) ->
         if baseline_profile:
             count_tag += f" baseline={g['baseline'] or 0}"
         lines.append(f"{service or '?'}\t{level}\t×{g['count']}({count_tag})\t{span}\t{g['sample']}")
-    return "\n".join(lines)
+
+    body = "\n".join(lines)
+    highlight = _build_highlight(
+        groups, records, trigger_dt, triggered_by, bool(baseline_profile)
+    )
+    return f"{highlight}\n\n{body}" if highlight else body
+
+
+_ERROR_LEVELS = {"FATAL", "CRITICAL", "ERROR"}
+
+
+def service_error_counts(bundle: IngestBundle) -> dict[str, int]:
+    """번들 로그에서 서비스별 에러 레벨(FATAL/CRITICAL/ERROR) 발생 수를 센다.
+
+    impact.affected[].errors는 report LLM이 Evidence 결론만 보고 채우다 보니 자주 누락됐다.
+    사실(factual) 카운트라 여기서 raw 로그로 결정적으로 세어 코드가 채운다(assemble).
+    """
+    counts: dict[str, int] = {}
+    for item in bundle.logs:
+        m = LEVEL_RE.search(item.raw)
+        if m and m.group(1).upper() in _ERROR_LEVELS:
+            counts[item.service] = counts.get(item.service, 0) + 1
+    return counts
 
 
 # ------------------------------------------------------------ metric 통계

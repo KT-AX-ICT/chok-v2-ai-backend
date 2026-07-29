@@ -113,7 +113,9 @@ class LlmOrchestrator:
         draft = await self._report_agent(
             state["bundle"], state["log_ev"], state["metric_ev"], state["trace_ev"]
         )
-        result = assemble(draft, state["log_ev"], state["metric_ev"], state["trace_ev"])
+        result = assemble(
+            draft, state["log_ev"], state["metric_ev"], state["trace_ev"], state["bundle"]
+        )
         return {"result": result}
 
     # ------------------------------------------------------------- 조립
